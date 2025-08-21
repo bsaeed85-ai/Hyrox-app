@@ -1,20 +1,32 @@
-<style>
-  :root{--bg:#0b1220;--panel:#111829;--border:#243048;--text:#e6edf6;--muted:#93a4c3;--brand:#38bdf8;--ok:#10b981;--warn:#f59e0b}
-  *{box-sizing:border-box}html,body{height:100%}
-  body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
-  a{color:var(--brand);text-decoration:none}
-  h1{font-size:28px;margin:0 0 12px} h2{font-size:18px;margin:18px 0 8px}
-  .wrap{max-width:1100px;margin:0 auto;padding:24px}
-  .grid{display:grid;gap:16px}
-  @media(min-width:900px){.grid-3{grid-template-columns:repeat(3,1fr)}}
-  .card{background:linear-gradient(180deg,#0f172a,#0c1324);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02)}
-  .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
-  input,select,button{border-radius:10px;border:1px solid var(--border);background:#0a1020;color:var(--text);padding:8px 10px}
-  input::placeholder{color:#6e7ea3}
-  button{cursor:pointer;background:#0e162b}
-  .btn{background:var(--brand);border-color:transparent;color:#042535}
-  .muted{color:var(--muted)}
-  .tag{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:#0a1020;font-size:12px;margin-right:6px}
-  .ok{color:var(--ok)} .warn{color:var(--warn)}
-  hr{border:0;border-top:1px solid var(--border);margin:14px 0}
-</style>
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>HYROX AI Coach</title>
+    <style>
+      :root{--bg:#0b1220;--panel:#0f172a;--border:#243048;--text:#e6edf6;--muted:#93a4c3;--brand:#38bdf8;--ok:#10b981;--warn:#f59e0b}
+      *{box-sizing:border-box}html,body{height:100%}
+      body{margin:0;background:var(--bg);color:var(--text);font:14px/1.45 system-ui,-apple-system,Segoe UI,Roboto,Ubuntu}
+      a{color:var(--brand);text-decoration:none}
+      h1{font-size:28px;margin:0 0 12px} h2{font-size:18px;margin:18px 0 8px}
+      .wrap{max-width:1100px;margin:0 auto;padding:24px}
+      .grid{display:grid;gap:16px} .grid-2{grid-template-columns:repeat(2,1fr)} .grid-3{grid-template-columns:repeat(3,1fr)}
+      @media(max-width:900px){.grid-2,.grid-3{grid-template-columns:1fr}}
+      .card{background:linear-gradient(180deg,#101a33,#0c1326);border:1px solid var(--border);border-radius:16px;padding:16px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.02)}
+      .row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+      input,select,button{border-radius:10px;border:1px solid var(--border);background:#0a1020;color:var(--text);padding:8px 10px}
+      input::placeholder{color:#6e7ea3}
+      .btn{cursor:pointer;background:var(--brand);border-color:transparent;color:#042535}
+      .muted{color:var(--muted)}
+      .pill{display:inline-block;padding:2px 8px;border:1px solid var(--border);border-radius:999px;background:#0a1020;font-size:12px;margin-right:6px}
+      hr{border:0;border-top:1px solid var(--border);margin:12px 0}
+      header{position:sticky;top:0;background:rgba(11,18,32,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--border);z-index:10}
+      header .inner{max-width:1100px;margin:0 auto;padding:14px 24px;display:flex;align-items:center;justify-content:space-between}
+      .title{display:flex;align-items:center;gap:10px}
+      .title .logo{width:28px;height:28px;border-radius:8px;background:#111b33;border:1px solid var(--border);display:grid;place-items:center}
+    </style>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.jsx"></scr
