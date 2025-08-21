@@ -82,6 +82,56 @@ function estimateMinutesFromBlocks(blocks) {
   if (total === 0) total = 45;
   return total;
 }
+function AuthBar() {
+  const [email, setEmail] = React.useState("");
+  const [code, setCode] = React.useState("");
+  const [status, setStatus] = React.useState("");
+  const [user, setUser] = React.useState(null);
+
+  React.useEffect(() => {
+    supa.auth.getSession().then(({ data }) => setUser(data?.session?.user || null));
+    const { data: sub } = supa.auth.onAuthStateChange((_e, session) => setUser(session?.user || null));
+    return () => sub.subscription?.unsubscribe?.();
+  }, []);
+
+  async function sendLink() {
+    setStatus("Sending…");
+    const { error } = await supa.auth.signInWithOtp({
+      email,
+      options: { emailRedirectTo: window.location.origin + window.location.pathname }
+    });
+    setStatus(error ? `Error: ${error.message}` : "Check your email for the link or code.");
+  }
+
+  async function verify() {
+    setStatus("Verifying…");
+    const { error } = await supa.auth.verifyOtp({ type: "email", email, token: code });
+    setStatus(error ? `Error: ${error.message}` : "Signed in.");
+  }
+
+  async function signOut() {
+    await supa.auth.signOut();
+    setUser(null);
+  }
+
+  return (
+    <div style={{padding:'8px 0'}}>
+      <div style={{fontWeight:600, marginBottom:6}}>Account</div>
+      <div style={{marginBottom:6}}>
+        {user ? `Signed in as ${user.email || user.id}` : "Not signed in"}
+      </div>
+      <div style={{display:'flex', gap:8, flexWrap:'wrap', alignItems:'center', marginBottom:6}}>
+        <input placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)} />
+        <button onClick={sendLink}>Send magic link</button>
+        <input placeholder="123456" value={code} onChange={e=>setCode(e.target.value)} style={{width:90}} />
+        <button onClick={verify}>Verify code</button>
+        {user && <button onClick={signOut}>Sign out</button>}
+      </div>
+      <div style={{fontSize:12, opacity:.8}}>{status}</div>
+      <hr style={{margin:'12px 0', opacity:.2}}/>
+    </div>
+  );
+}
 
 export default function Dashboard({ user }) {
   const [{ url, key }, setEnv] = useState(() => safeGetEnv());
