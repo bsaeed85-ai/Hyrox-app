@@ -154,12 +154,22 @@ function ProfileCard({ user, profile, setProfile }){
     const { error } = await supa.from("profiles").upsert(payload, { onConflict:"id" });
     if(error) return alert("Error: "+error.message); alert("Profile saved.");
   }
-  async function loadCloud(){
-    if(!supa||!user) return alert("Sign in first.");
-    const { data, error } = await supa.from("profiles").select("*").eq("id",user.id).maybeSingle();
-    if(error) return alert("Error: "+error.message);
-    if(!data) return alert("No profile on server yet.");
-    setProfile({ experience:data.experience||"beginner", goal:data.goal||"balanced" });
+  async function generateWeek1ToCloud(){
+  if(!supa||!user) return alert("Sign in first.");
+  if(!plan.length) return alert("No plan generated.");
+  const rows = plan.map((d,i)=>({
+    user_id:user.id, week_index:1, day_index:i, session_date:null,
+    title:d.session.type, blocks:d.session.blocks||[], focus:d.session.focus||null,
+    phase:d.phase, targets:null, completed:false
+  }));
+  const { error } = await supa.from("workouts").upsert(rows, { onConflict:"user_id,week_index,day_index" });
+  if(error) return alert("Error: "+error.message);
+  alert("Week 1 plan saved to cloud.");
+
+  // 👇 Add this line so the ThisWeek panel refreshes immediately
+  window.dispatchEvent(new Event("workouts:changed"));
+}
+
   }
   return (
     <Card title="Profile" right={<div className="row"><button onClick={saveCloud}>Save to cloud</button><button onClick={loadCloud}>Load from cloud</button></div>}>
