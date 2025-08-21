@@ -135,7 +135,7 @@ function AuthBar(){
   return (<div className="card"><div className="row" style={{justifyContent:"space-between"}}><div><div style={{fontWeight:600,marginBottom:6}}>Account</div><div className="muted">{user?`Signed in as ${user.email||user.id}`:"Not signed in"}</div></div><div className="row">{!user?(<><input placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)}/><button className="btn" onClick={sendLink}>Send magic link</button><input placeholder="123456" value={code} onChange={e=>setCode(e.target.value)} style={{width:100}}/><button onClick={verify}>Verify code</button></>):(<button onClick={signOut}>Sign out</button>)}</div></div>{status&&<div className="muted" style={{marginTop:8}}>{status}</div>}</div>);
 }
 
-/* ---------- Guided Baseline (stopwatch flow) ---------- */
+/* ---------- Guided Baseline ---------- */
 function Stopwatch({running,onToggle,onReset,seconds}){ const mmss=secondsToMMSS(seconds); return(<div className="row"><div style={{fontFamily:"monospace",fontSize:24}}>{mmss}</div><button className="btn" onClick={onToggle}>{running?"Stop":"Start"}</button><button onClick={onReset}>Reset</button></div>); }
 function GuidedBaseline({ base, setBase }){
   const tests=[["run5k","Run 5k"],["ski1k","SkiErg 1,000 m"],["row1k","Row 1,000 m"],["sledPush50m","Sled Push 50 m"],["sledPull50m","Sled Pull 50 m"],["burpeeBroad80m","Burpee Broad 80 m"],["farmer200m","Farmer’s Carry 200 m"],["lunges100m","Walking Lunges 100 m"]];
@@ -146,61 +146,121 @@ function GuidedBaseline({ base, setBase }){
   return(<Card title="Guided Baseline"><div className="muted" style={{marginBottom:8}}>Use the stopwatch to time each test. Click Save after each, then Next.</div>{!atEnd?(<><div style={{fontWeight:600,marginBottom:6}}>{curr[1]}</div><Stopwatch running={running} onToggle={()=>setRunning(r=>!r)} onReset={()=>{setRunning(false);setSecElapsed(0);}} seconds={secElapsed}/><div className="row" style={{marginTop:8}}><button className="btn" onClick={saveTime}>Save time</button><button onClick={()=>{setIdx(i=>i+1); setRunning(false); setSecElapsed(0);}}>Next</button><button onClick={()=>setIdx(tests.length)}>Skip to summary</button></div><div className="muted" style={{marginTop:8}}>Saved: {tests.map(t=>base[t[0]]?t[1]:null).filter(Boolean).join(", ")||"None"}</div></>):(<><div style={{fontWeight:600,marginBottom:6}}>Summary</div><ul style={{margin:0,paddingLeft:16}}>{tests.map(t=><li key={t[0]}>{t[1]}: {base[t[0]]||"--:--"}</li>)}</ul></>)}</Card>);
 }
 
+/* ---------- Profile card (NEW) ---------- */
+function ProfileCard({ user, profile, setProfile }){
+  async function saveCloud(){
+    if(!supa||!user) return alert("Sign in first.");
+    const payload={ id:user.id, email:user.email||null, experience:profile.experience, goal:profile.goal };
+    const { error } = await supa.from("profiles").upsert(payload, { onConflict:"id" });
+    if(error) return alert("Error: "+error.message); alert("Profile saved.");
+  }
+  async function loadCloud(){
+    if(!supa||!user) return alert("Sign in first.");
+    const { data, error } = await supa.from("profiles").select("*").eq("id",user.id).maybeSingle();
+    if(error) return alert("Error: "+error.message);
+    if(!data) return alert("No profile on server yet.");
+    setProfile({ experience:data.experience||"beginner", goal:data.goal||"balanced" });
+  }
+  return (
+    <Card title="Profile" right={<div className="row"><button onClick={saveCloud}>Save to cloud</button><button onClick={loadCloud}>Load from cloud</button></div>}>
+      <div className="row" style={{gap:12,flexWrap:"wrap"}}>
+        <label className="row" style={{gap:6}}>
+          <span className="muted">Experience</span>
+          <select value={profile.experience} onChange={e=>setProfile({...profile,experience:e.target.value})}>
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="pro">Pro</option>
+          </select>
+        </label>
+        <label className="row" style={{gap:6}}>
+          <span className="muted">Goal</span>
+          <select value={profile.goal} onChange={e=>setProfile({...profile,goal:e.target.value})}>
+            <option value="balanced">Balanced</option>
+            <option value="endurance">Endurance</option>
+            <option value="strength">Strength</option>
+          </select>
+        </label>
+      </div>
+    </Card>
+  );
+}
+
+/* ---------- This Week from cloud (NEW) ---------- */
+function ThisWeek({ user }){
+  const [rows,setRows]=React.useState([]);
+  async function fetchWeek(){
+    if(!supa||!user) return setRows([]);
+    const { data, error } = await supa.from("workouts").select("*").eq("user_id",user.id).eq("week_index",1).order("day_index");
+    if(error) return alert("Error: "+error.message);
+    setRows(data||[]);
+  }
+  async function toggle(id, completed){
+    const { error } = await supa.from("workouts").update({ completed }).eq("id",id);
+    if(error) return alert("Error: "+error.message);
+    setRows(r=>r.map(x=>x.id===id?{...x,completed}:x));
+  }
+  React.useEffect(()=>{ fetchWeek(); },[user?.id]);
+  return (
+    <Card title="This Week (cloud)">
+      {(!rows||!rows.length)?(<div className="muted">No workouts saved to cloud yet.</div>):(
+        <div className="grid grid-3">
+          {rows.map(r=>(
+            <div key={r.id} className="card" style={{padding:12}}>
+              <div className="muted" style={{fontSize:12}}>Day {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][r.day_index]}</div>
+              <div style={{fontWeight:700,marginBottom:6}}>{r.title}</div>
+              {Array.isArray(r.blocks)?<ul style={{margin:0,paddingLeft:16}}>{r.blocks.map((b,i)=><li key={i}>{b}</li>)}</ul>:null}
+              <div className="row" style={{marginTop:8}}>
+                <label className="row" style={{gap:6}}>
+                  <input type="checkbox" checked={!!r.completed} onChange={e=>toggle(r.id,e.target.checked)} />
+                  <span className="muted">Completed</span>
+                </label>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 /* ---------- Main App ---------- */
 export default function App(){
-  // viewer mode for shared snapshots
   const [snapshot,setSnapshot]=React.useState(null);
-  React.useEffect(()=>{ try{ const url=new URL(window.location.href); const snap=url.searchParams.get("snapshot"); if(snap){ setSnapshot(JSON.parse(decodeURIComponent(atob(snap)))); } }catch{} },[]);
-  if(snapshot) return <SharedViewer data={snapshot} />;
+  React.useEffect(()=>{ try{ const url=new URL(window.location.href); const snap=url.searchParams.get("snapshot"); if(snap){ setSnapshot(JSON.parse(decodeURIComponent(btoa.atob?atob(snap):atob(snap)))); } }catch{} },[]);
+  if(snapshot) return <div className="wrap"><h1>Shared plan</h1></div>;
 
   const [athlete,setAthlete]=React.useState(load("hyrox.athlete",{ name:"", division:"Open", goalType:"Race", raceDate:"" }));
   const [base,setBase]=React.useState(load("hyrox.base",{ run5k:"25:00", ski1k:"4:30", row1k:"4:00", sledPush50m:"3:00", sledPull50m:"2:50", burpeeBroad80m:"6:00", farmer200m:"3:00", lunges100m:"4:30", wallballs100:22, readiness:4 }));
-  React.useEffect(()=>save("hyrox.athlete",athlete),[athlete]); React.useEffect(()=>save("hyrox.base",base),[base]);
+  const [profile,setProfile]=React.useState(load("hyrox.profile",{ experience:"beginner", goal:"balanced" }));
+  React.useEffect(()=>save("hyrox.athlete",athlete),[athlete]);
+  React.useEffect(()=>save("hyrox.base",base),[base]);
+  React.useEffect(()=>save("hyrox.profile",profile),[profile]);
 
   const analysis=React.useMemo(()=>estimateRaceFromBaseline(base),[base]);
   const plan=React.useMemo(()=>makeWeekPlan({ goalType:athlete.goalType, raceDate:athlete.raceDate, ...base }, analysis),[athlete,base,analysis]);
 
-  // today + readiness adjust
+  const [user,setUser]=React.useState(null);
+  React.useEffect(()=>{ if(!supa) return; let sub; (async()=>{ const {data}=await supa.auth.getSession(); setUser(data?.session?.user||null); const res=supa.auth.onAuthStateChange((_e,s)=>setUser(s?.user||null)); sub=res.data?.subscription; })(); return()=>sub?.unsubscribe?.(); },[]);
+
+  async function generateWeek1ToCloud(){
+    if(!supa||!user) return alert("Sign in first.");
+    if(!plan.length) return alert("No plan generated.");
+    const rows = plan.map((d,i)=>({
+      user_id:user.id, week_index:1, day_index:i, session_date:null,
+      title:d.session.type, blocks:d.session.blocks||[], focus:d.session.focus||null,
+      phase:d.phase, targets:null, completed:false
+    }));
+    const { error } = await supa.from("workouts").upsert(rows, { onConflict:"user_id,week_index,day_index" });
+    if(error) return alert("Error: "+error.message);
+    alert("Week 1 plan saved to cloud.");
+  }
+
+  // today adjust (local “Train Today”)
   const weekday=new Date().getDay(); const map=[6,0,1,2,3,4,5]; const idx=map[weekday]??0;
   const todays=plan[idx]||plan[0]||{ day:"Mon", session:{type:"Rest",blocks:["Walk 20′"]} };
   const [readiness,setReadiness]=React.useState(3);
   const paces=React.useMemo(()=>({ run5k:pacePerKmFrom5k(base.run5k||"25:00"), goalRun:analysis.splits.run8k/8, ski500:ergPace500From1k(base.ski1k||"4:30"), row500:ergPace500From1k(base.row1k||"4:00"), row2k500:ergPace500From1k(base.row1k||"4:00")+2 }),[base.run5k,base.ski1k,base.row1k,analysis.splits.run8k]);
   const adjusted=React.useMemo(()=>{ const s={...todays.session}; let blocks=s.blocks?[...s.blocks]:(s.notes?[s.notes]:[]); blocks=annotateBlocks(blocks,paces); const scale=(arr,mode)=>arr.map(line=>{ let out=line; if(mode==="easy"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Math.max(1,Math.round(Number(p1)*0.65))}×`).replace(/@ *[^;\n]+pace/g,"@ easy pace").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.round(Number(n)*1.3)}${String(u).toLowerCase().includes("min")?" min":"s"}`).replace(/EMOM *([0-9]+)[′']/i,(m,min)=>`EMOM ${Math.max(8,Math.round(Number(min)*0.85))}′`);} else if(mode==="hard"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Number(p1)+1}×`).replace(/@ *5k pace/g,"@ 5k pace − 5–8s/km").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.max(20,Math.round(Number(n)*0.85))}${String(u).toLowerCase().includes("min")?" min":"s"}`);} return out; }); if(readiness<=2){ s.type=`${s.type} (Easy)`; s.blocks=scale(blocks,"easy"); } else if(readiness>=4){ s.type=`${s.type} (Challenging)`; s.blocks=scale(blocks,"hard"); } else { s.blocks=scale(blocks,"normal"); } return s; },[todays,readiness,paces]);
-
-  // cloud helpers
-  const [user,setUser]=React.useState(null);
-  React.useEffect(()=>{ if(!supa) return; let sub; (async()=>{ const {data}=await supa.auth.getSession(); setUser(data?.session?.user||null); const res=supa.auth.onAuthStateChange((_e,s)=>setUser(s?.user||null)); sub=res.data?.subscription; })(); return()=>sub?.unsubscribe?.(); },[]);
-  const cleanNum=(v)=>(v===""||v==null||Number.isNaN(Number(v))?null:Number(v));
-
-  async function pushBaseline(){
-    if(!supa||!user) return alert("Sign in first.");
-    const payload={ user_id:user.id, run5k:base.run5k||null, ski1k:base.ski1k||null, row1k:base.row1k||null, sledpush50m:base.sledPush50m||null, sledpull50m:base.sledPull50m||null, burpeebroad80m:base.burpeeBroad80m||null, farmer200m:base.farmer200m||null, lunges100m:base.lunges100m||null, wallballs100:cleanNum(base.wallballs100), readiness:cleanNum(base.readiness), updated_at:new Date().toISOString() };
-    const { error } = await supa.from("baselines").upsert(payload,{ onConflict:"user_id" });
-    if(error) return alert("Error: "+error.message); alert("Baseline synced.");
-  }
-  async function pullBaseline(){
-    if(!supa||!user) return alert("Sign in first.");
-    const { data, error } = await supa.from("baselines").select("*").eq("user_id",user.id).limit(1).maybeSingle();
-    if(error) return alert("Error: "+error.message);
-    if(!data) return alert("No baseline on server.");
-    const next={...base};
-    if(data.run5k!=null) next.run5k=data.run5k;
-    if(data.ski1k!=null) next.ski1k=data.ski1k;
-    if(data.row1k!=null) next.row1k=data.row1k;
-    if(data.sledpush50m!=null) next.sledPush50m=data.sledpush50m;
-    if(data.sledpull50m!=null) next.sledPull50m=data.sledpull50m;
-    if(data.burpeebroad80m!=null) next.burpeeBroad80m=data.burpeebroad80m;
-    if(data.farmer200m!=null) next.farmer200m=data.farmer200m;
-    if(data.lunges100m!=null) next.lunges100m=data.lunges100m;
-    if(data.wallballs100!=null) next.wallballs100=data.wallballs100;
-    if(data.readiness!=null) next.readiness=data.readiness;
-    setBase(next); alert("Baseline pulled.");
-  }
-  async function saveSession(){
-    const entry={ ts:new Date().toISOString(), dayIdx:idx, session:adjusted, rpe:null, notes:null, readiness, completed:false };
-    const local=load("hyrox.sessions",[]); local.push(entry); save("hyrox.sessions",local);
-    if(supa&&user){ const { error } = await supa.from("sessions").insert({ user_id:user.id, ts:entry.ts, day_idx:entry.dayIdx, session:entry.session, rpe:entry.rpe, notes:entry.notes, readiness:entry.readiness, completed:entry.completed }); if(error) return alert("Saved locally. Cloud error: "+error.message); alert("Saved locally + cloud."); } else { alert("Saved locally. Sign in to sync to cloud."); }
-  }
 
   function makeShareLink(){
     const payload={ plan, analysis:{ total:analysis.total, splits:analysis.splits }, athlete:{ name:athlete.name, division:athlete.division, goalType:athlete.goalType, raceDate:athlete.raceDate } };
@@ -213,7 +273,7 @@ export default function App(){
     <>
       <header>
         <div className="inner">
-          <div className="title"><div className="logo">🏆</div><div><div style={{fontWeight:700}}>HYROX AI Coach</div><div className="muted" style={{fontSize:12}}>v1.2 • Cloud • Share • Guided baseline</div></div></div>
+          <div className="title"><div className="logo">🏆</div><div><div style={{fontWeight:700}}>HYROX AI Coach</div><div className="muted" style={{fontSize:12}}>v1.3 • Profile • Week plan to cloud • Check off</div></div></div>
         </div>
       </header>
 
@@ -221,7 +281,6 @@ export default function App(){
         <h1>Dashboard</h1>
         <AuthBar/>
 
-        {/* Athlete top line */}
         <Card title="Athlete">
           <div className="row">
             <input placeholder="Name" value={athlete.name} onChange={e=>setAthlete({...athlete, name:e.target.value})}/>
@@ -231,8 +290,9 @@ export default function App(){
           </div>
         </Card>
 
-        {/* Baseline quick + cloud */}
-        <Card title="Baseline (quick)" right={<div className="row"><button onClick={pushBaseline}>Save to cloud</button><button onClick={pullBaseline}>Pull from cloud</button></div>}>
+        <ProfileCard user={user} profile={profile} setProfile={setProfile} />
+
+        <Card title="Baseline (quick)" right={<div className="row"><button className="btn" onClick={generateWeek1ToCloud}>Generate Week 1 plan → Cloud</button><button onClick={makeShareLink}>Share plan</button></div>}>
           <div className="row" style={{flexWrap:"wrap"}}>
             {[
               ["run5k","5k run (mm:ss)"],["ski1k","SkiErg 1k"],["row1k","Row 1k"],
@@ -248,12 +308,10 @@ export default function App(){
 
         <GuidedBaseline base={base} setBase={setBase} />
 
-        {/* Race Twin */}
         <Card title="Race Twin (prediction)">
           <div className="row" style={{gap:16,flexWrap:"wrap"}}>
             <div className="pill">Predicted: <b>{secondsToMMSS(analysis.total)}</b></div>
             <div className="muted">Limiters: {analysis.sortedLimiters.slice(0,4).map(x=>x.station).join(", ")}</div>
-            <button className="btn" onClick={makeShareLink}>Share plan (read-only)</button>
           </div>
           <hr/>
           <div className="grid grid-3">
@@ -266,56 +324,17 @@ export default function App(){
           </div>
         </Card>
 
-        {/* Week plan */}
-        <Card title={`Your next 7 days — ${plan[0]?.phase||"Health"}${isDeloadWeek()&&(plan[0]?.phase!=="Taper")?" (Deload)":""}`}>
-          <div className="grid grid-3">
-            {plan.map(d=>(
-              <div key={d.day} className="card" style={{padding:12}}>
-                <div className="muted" style={{fontSize:12}}>{d.day}</div>
-                <div style={{fontWeight:700,marginBottom:6}}>{d.session.type}</div>
-                {d.session.blocks?(
-                  <ul style={{margin:0,paddingLeft:16}}>{d.session.blocks.map((b,i)=><li key={i}>{b}</li>)}</ul>
-                ):<div className="muted">{d.session.notes}</div>}
-              </div>
-            ))}
-          </div>
+        <Card title={`Train Today`}>
+          <div className="muted" style={{marginBottom:6}}>{(plan[idx]?.day)||"Mon"}</div>
+          <div style={{fontWeight:700}}>{(plan[idx]?.session?.type)||"Rest"}</div>
+          <ul style={{marginTop:6,paddingLeft:16}}>{(plan[idx]?.session?.blocks||["Walk 20′"]).map((b,i)=><li key={i}>{b}</li>)}</ul>
+          <div className="row" style={{marginTop:8}}><span className="muted">Readiness</span><input type="range" min={1} max={5} value={readiness} onChange={e=>setReadiness(Number(e.target.value))}/></div>
         </Card>
 
-        {/* Train Today */}
-        <Card title="Train Today" right={<div className="row"><span className="muted">Readiness</span><input type="range" min={1} max={5} value={readiness} onChange={e=>setReadiness(Number(e.target.value))}/></div>}>
-          <div className="muted" style={{marginBottom:6}}>{todays.day}</div>
-          <div style={{fontWeight:700}}>{adjusted.type}</div>
-          <ul style={{marginTop:6,paddingLeft:16}}>{adjusted.blocks?.map((b,i)=><li key={i}>{b}</li>)}</ul>
-          <div className="row" style={{marginTop:8}}><button className="btn" onClick={saveSession}>Save session</button></div>
-        </Card>
+        <ThisWeek user={user} />
 
-        {/* Existing simple cards kept for now */}
         <Card title="Pro Features"><div className="muted">Coming soon: Race Sim+, export, multi-athlete with Stripe Checkout.</div></Card>
       </main>
     </>
-  );
-}
-
-/* ---------- Share viewer ---------- */
-function SharedViewer({ data }){
-  const total=secondsToMMSS(data.analysis.total);
-  return (
-    <div className="wrap">
-      <h1>HYROX Plan — Viewer</h1>
-      <div className="muted" style={{marginBottom:8}}>{data.athlete.name||"Athlete"} • {data.athlete.division}</div>
-      <div className="pill">Predicted: <b>{total}</b></div>
-      <div className="grid grid-3" style={{marginTop:16}}>
-        {data.plan.map(d=>(
-          <div key={d.day} className="card" style={{padding:12}}>
-            <div className="muted" style={{fontSize:12}}>{d.day}</div>
-            <div style={{fontWeight:700,marginBottom:6}}>{d.session.type}</div>
-            {d.session.blocks?(
-              <ul style={{margin:0,paddingLeft:16}}>{d.session.blocks.map((b,i)=><li key={i}>{b}</li>)}</ul>
-            ):(<div className="muted">{d.session.notes}</div>)}
-          </div>
-        ))}
-      </div>
-      <div className="muted" style={{marginTop:12}}>Read-only snapshot</div>
-    </div>
   );
 }
