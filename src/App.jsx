@@ -186,39 +186,169 @@ function ProfileCard({ user, profile, setProfile }){
 }
 
 /* ---------- This Week from cloud (NEW) ---------- */
-function ThisWeek({ user }){
-  const [rows,setRows]=React.useState([]);
-  async function fetchWeek(){
-    if(!supa||!user) return setRows([]);
-    const { data, error } = await supa.from("workouts").select("*").eq("user_id",user.id).eq("week_index",1).order("day_index");
-    if(error) return alert("Error: "+error.message);
-    setRows(data||[]);
+function ThisWeek({ user }) {
+  const [groups, setGroups] = React.useState([]); // [{day_index, items: [...] }]
+  const [open, setOpen] = React.useState(new Set()); // accordion
+  const [loading, setLoading] = React.useState(false);
+  const [err, setErr] = React.useState("");
+
+  const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+  async function fetchWeek() {
+    if (!supa || !user) {
+      setGroups([]);
+      return;
+    }
+    setLoading(true);
+    setErr("");
+    const { data, error } = await supa
+      .from("workouts")
+      .select("*")
+      .eq("user_id", user.id)
+      .eq("week_index", 1)
+      .order("day_index", { ascending: true });
+
+    if (error) {
+      setErr(error.message);
+      setGroups([]);
+    } else {
+      // group by day_index
+      const byDay = new Map();
+      (data || []).forEach((r) => {
+        const key = r.day_index ?? 0;
+        if (!byDay.has(key)) byDay.set(key, []);
+        byDay.get(key).push(r);
+      });
+      const grouped = Array.from(byDay.entries())
+        .sort((a, b) => a[0] - b[0])
+        .map(([day_index, items]) => ({ day_index, items }));
+      setGroups(grouped);
+    }
+    setLoading(false);
   }
-  async function toggle(id, completed){
-    const { error } = await supa.from("workouts").update({ completed }).eq("id",id);
-    if(error) return alert("Error: "+error.message);
-    setRows(r=>r.map(x=>x.id===id?{...x,completed}:x));
+
+  async function toggleComplete(row) {
+    const newVal = !row.completed;
+    // optimistic UI
+    setGroups((g) =>
+      g.map((grp) => ({
+        ...grp,
+        items: grp.items.map((it) =>
+          it.id === row.id ? { ...it, completed: newVal } : it
+        ),
+      }))
+    );
+    const { error } = await supa.from("workouts").update({ completed: newVal }).eq("id", row.id);
+    if (error) {
+      alert("Error: " + error.message);
+      // revert on failure
+      setGroups((g) =>
+        g.map((grp) => ({
+          ...grp,
+          items: grp.items.map((it) =>
+            it.id === row.id ? { ...it, completed: row.completed } : it
+          ),
+        }))
+      );
+    }
   }
-  React.useEffect(()=>{ fetchWeek(); },[user?.id]);
+
+  async function saveRpeNotes(row, rpe, notes) {
+    const { error } = await supa.from("workouts").update({ rpe, notes }).eq("id", row.id);
+    if (error) alert("Error: " + error.message);
+  }
+
+  function toggleAccordion(dayIndex) {
+    setOpen((o) => {
+      const next = new Set(o);
+      if (next.has(dayIndex)) next.delete(dayIndex);
+      else next.add(dayIndex);
+      return next;
+    });
+  }
+
+  React.useEffect(() => {
+    fetchWeek();
+    // listen for “workouts changed” events so this refreshes right after generate
+    const onChanged = () => fetchWeek();
+    window.addEventListener("workouts:changed", onChanged);
+    return () => window.removeEventListener("workouts:changed", onChanged);
+  }, [user?.id]);
+
   return (
-    <Card title="This Week (cloud)">
-      {(!rows||!rows.length)?(<div className="muted">No workouts saved to cloud yet.</div>):(
-        <div className="grid grid-3">
-          {rows.map(r=>(
-            <div key={r.id} className="card" style={{padding:12}}>
-              <div className="muted" style={{fontSize:12}}>Day {["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][r.day_index]}</div>
-              <div style={{fontWeight:700,marginBottom:6}}>{r.title}</div>
-              {Array.isArray(r.blocks)?<ul style={{margin:0,paddingLeft:16}}>{r.blocks.map((b,i)=><li key={i}>{b}</li>)}</ul>:null}
-              <div className="row" style={{marginTop:8}}>
-                <label className="row" style={{gap:6}}>
-                  <input type="checkbox" checked={!!r.completed} onChange={e=>toggle(r.id,e.target.checked)} />
-                  <span className="muted">Completed</span>
-                </label>
+    <Card
+      title="This Week (cloud)"
+      right={<button onClick={fetchWeek} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button>}
+    >
+      {err && <div className="muted" style={{ color: "#fca5a5" }}>Error: {err}</div>}
+      {!loading && (!groups || groups.length === 0) ? (
+        <div className="muted">No workouts saved to cloud yet.</div>
+      ) : null}
+
+      <div className="grid" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
+        {groups.map((grp) => {
+          const dayName = days[grp.day_index] ?? `Day ${grp.day_index}`;
+          const isOpen = open.has(grp.day_index);
+          return (
+            <div key={grp.day_index} className="card" style={{ padding: 12 }}>
+              <div className="row" style={{ justifyContent: "space-between", cursor: "pointer" }} onClick={() => toggleAccordion(grp.day_index)}>
+                <div style={{ fontWeight: 700 }}>{dayName}</div>
+                <div className="muted">{isOpen ? "Hide" : "Show"}</div>
               </div>
+
+              {isOpen && (
+                <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
+                  {grp.items.map((w) => (
+                    <div key={w.id} className="card" style={{ padding: 12 }}>
+                      <div className="row" style={{ justifyContent: "space-between" }}>
+                        <div>
+                          <div style={{ fontWeight: 700 }}>{w.title}</div>
+                          <div className="muted" style={{ fontSize: 12 }}>
+                            {w.phase ? `Phase: ${w.phase}` : null}
+                            {w.focus ? ` • Focus: ${w.focus}` : null}
+                          </div>
+                        </div>
+                        <label className="row" style={{ gap: 6 }}>
+                          <input type="checkbox" checked={!!w.completed} onChange={() => toggleComplete(w)} />
+                          <span className="muted">Completed</span>
+                        </label>
+                      </div>
+
+                      {Array.isArray(w.blocks) && w.blocks.length > 0 ? (
+                        <ul style={{ margin: "6px 0 0", paddingLeft: 16 }}>
+                          {w.blocks.map((b, i) => (
+                            <li key={i}>{b}</li>
+                          ))}
+                        </ul>
+                      ) : (
+                        <div className="muted" style={{ marginTop: 6 }}>No blocks specified.</div>
+                      )}
+
+                      <div className="row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}>
+                        <input
+                          placeholder="RPE (1–10)"
+                          defaultValue={w.rpe ?? ""}
+                          onBlur={(e) => saveRpeNotes(w, e.target.value === "" ? null : Number(e.target.value), w.notes ?? null)}
+                          style={{ width: 90 }}
+                          type="number"
+                          min={1}
+                          max={10}
+                        />
+                        <input
+                          placeholder="Notes"
+                          defaultValue={w.notes ?? ""}
+                          onBlur={(e) => saveRpeNotes(w, w.rpe ?? null, e.target.value)}
+                          style={{ flex: 1, minWidth: 200 }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
-          ))}
-        </div>
-      )}
+          );
+        })}
+      </div>
     </Card>
   );
 }
