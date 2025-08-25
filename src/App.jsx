@@ -710,7 +710,10 @@ export default function App(){
     alert("Week 1 plan saved to cloud.");
   }
 
-  // today adjust (local “Train Today”)
+  function TrainTodayCard({ user }) {
+  ...
+}
+
   const weekday=new Date().getDay(); const map=[6,0,1,2,3,4,5]; const idx=map[weekday]??0;
   const todays=plan[idx]||plan[0]||{ day:"Mon", session:{type:"Rest",blocks:["Walk 20′"]} };
   const [readiness,setReadiness]=React.useState(3);
