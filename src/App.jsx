@@ -574,6 +574,145 @@ function TrainTodayCard({ user }) {
     </section>
   );
 }
+/* ---------- HISTORY PAGE (paste above `export default function ...`) ---------- */
+
+function groupByWeek(rows) {
+  const by = {};
+  for (const r of rows) {
+    const d = new Date(r.ts || r.created_at || Date.now());
+    const key = weekKeyOf(d);
+    if (!by[key]) by[key] = [];
+    by[key].push(r);
+  }
+  return by;
+}
+
+function HistoryPage({ user }) {
+  const [{ url, key }] = React.useState(() => safeGetEnv());
+  const supa = React.useMemo(() => (url && key ? createClient(url, key) : null), [url, key]);
+  const [loading, setLoading] = React.useState(true);
+  const [sessions, setSessions] = React.useState([]);
+  const [prs, setPrs] = React.useState([]);
+  const [err, setErr] = React.useState("");
+
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!supa || !user?.id) { setErr("Not signed in"); setLoading(false); return; }
+
+      // Pull last ~8 weeks of sessions
+      const since = new Date();
+      since.setDate(since.getDate() - 56);
+      const [sRes, pRes] = await Promise.all([
+        supa.from("sessions")
+            .select("id, ts, session, completed, readiness")
+            .eq("user_id", user.id)
+            .gte("ts", since.toISOString())
+            .order("ts", { ascending: false }),
+        supa.from("prs")
+            .select("*")
+            .eq("user_id", user.id)
+            .order("created_at", { ascending: false })
+            .limit(12),
+      ]);
+
+      if (!alive) return;
+      if (sRes.error) setErr(sRes.error.message);
+      if (pRes.error) setErr((e) => e || pRes.error.message);
+      setSessions(sRes.data || []);
+      setPrs(pRes.data || []);
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+  }, [supa, user?.id]);
+
+  const byWeek = React.useMemo(() => groupByWeek(sessions), [sessions]);
+  const weekKeys = React.useMemo(
+    () => Object.keys(byWeek).sort((a, b) => (a < b ? 1 : -1)),
+    [byWeek]
+  );
+
+  // Compute a minutes bar per week
+  const weekStats = React.useMemo(() => {
+    const arr = weekKeys.map((wk) => {
+      const rows = byWeek[wk];
+      const total = rows.length;
+      const done = rows.filter((r) => r.completed).length;
+      const comp = total ? Math.round((done / total) * 100) : 0;
+      const mins = rows.reduce(
+        (acc, r) => acc + estimateMinutesFromBlocks(r.session?.blocks || []),
+        0
+      );
+      const avgReadiness = total
+        ? Math.round(
+            (rows.reduce((a, r) => a + (r.readiness || 0), 0) / total) * 10
+          ) / 10
+        : 0;
+      return { wk, total, done, comp, mins, avgReadiness };
+    });
+    const maxMins = Math.max(60, ...arr.map((x) => x.mins));
+    return { rows: arr, maxMins };
+  }, [byWeek, weekKeys]);
+
+  return (
+    <section className="border border-slate-800 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-lg font-semibold">History</h2>
+        <div className="text-xs text-slate-400">{err}</div>
+      </div>
+
+      {loading ? (
+        <p className="text-sm">Loading…</p>
+      ) : (
+        <>
+          {/* Weekly bars */}
+          <div className="space-y-2">
+            {weekStats.rows.length === 0 && (
+              <p className="text-sm">No sessions logged yet.</p>
+            )}
+            {weekStats.rows.map(({ wk, mins, done, total, comp, avgReadiness }) => (
+              <div key={wk}>
+                <div className="flex items-center justify-between text-xs mb-1">
+                  <span className="text-slate-300">Week of {wk}</span>
+                  <span className="text-slate-400">
+                    {done}/{total} • {comp}% • ~{mins}′ • readiness {avgReadiness}/5
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-800 rounded">
+                  <div
+                    className="h-2 bg-sky-500 rounded"
+                    style={{ width: `${Math.min(100, Math.round((mins / weekStats.maxMins) * 100))}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Recent PRs */}
+          <div className="mt-6">
+            <div className="text-sm font-semibold mb-2">Recent PRs</div>
+            {prs.length === 0 ? (
+              <p className="text-sm">No PRs yet</p>
+            ) : (
+              <ul className="text-sm grid md:grid-cols-2 gap-2">
+                {prs.map((pr) => (
+                  <li key={pr.id} className="border border-slate-800 rounded px-2 py-1 flex items-center justify-between">
+                    <span>{pr.exercise}</span>
+                    <span className="font-mono">
+                      {pr.is_time ? secondsToMMSS(pr.value_num) : pr.value}
+                      {pr.unit ? ` ${pr.unit}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
+
 export default function App(){
   function SharePage() {
   const [{ url, key }] = React.useState(() => safeGetEnv());
