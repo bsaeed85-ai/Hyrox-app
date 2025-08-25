@@ -193,7 +193,6 @@ function ProfileCard({ user, profile, setProfile }){
       </div>
     </Card>
   );
-}
 
 /* ---------- This Week from cloud (NEW) ---------- */
 function ThisWeek({ user }) {
