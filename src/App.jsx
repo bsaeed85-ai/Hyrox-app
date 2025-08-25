@@ -364,6 +364,216 @@ function ThisWeek({ user }) {
 }
 
 /* ---------- Main App ---------- */
+function startOfDayISO(d = new Date()) {
+  const x = new Date(d);
+  x.setHours(0, 0, 0, 0);
+  return x.toISOString();
+}
+function endOfDayISO(d = new Date()) {
+  const x = new Date(d);
+  x.setHours(23, 59, 59, 999);
+  return x.toISOString();
+}
+function dowIndex(d = new Date()) {
+  // 0=Mon ... 6=Sun (to match our week/day convention used in workouts)
+  const js = d.getDay(); // 0=Sun..6=Sat
+  return js === 0 ? 6 : js - 1;
+}
+
+function TrainTodayCard({ user }) {
+  const [{ url, key }] = React.useState(() => safeGetEnv());
+  const supa = React.useMemo(() => (url && key ? createClient(url, key) : null), [url, key]);
+
+  const [loading, setLoading] = React.useState(true);
+  const [sessionId, setSessionId] = React.useState(null);
+  const [title, setTitle] = React.useState("");
+  const [blocks, setBlocks] = React.useState([]); // array of strings
+  const [completed, setCompleted] = React.useState(false);
+  const [readiness, setReadiness] = React.useState(3);
+  const [notes, setNotes] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+
+  // Load today's session if it exists
+  React.useEffect(() => {
+    let alive = true;
+    (async () => {
+      if (!supa || !user?.id) { setMsg("Not signed in"); setLoading(false); return; }
+      setLoading(true);
+      const { data, error } = await supa
+        .from("sessions")
+        .select("id, ts, session, completed, readiness, notes")
+        .eq("user_id", user.id)
+        .gte("ts", startOfDayISO())
+        .lt("ts", endOfDayISO())
+        .order("ts", { ascending: true })
+        .limit(1);
+      if (!alive) return;
+      if (error) { setMsg(error.message); setLoading(false); return; }
+
+      const row = (data && data[0]) || null;
+      if (row) {
+        setSessionId(row.id);
+        const s = row.session || {};
+        setTitle(s.title || "");
+        setBlocks(Array.isArray(s.blocks) ? s.blocks : []);
+        setCompleted(!!row.completed);
+        setReadiness(row.readiness ?? 3);
+        setNotes(row.notes || "");
+      } else {
+        // Nothing logged yet → try importing something helpful from workouts
+        await tryImportFromWorkouts();
+      }
+      setLoading(false);
+    })();
+    return () => { alive = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [supa, user?.id]);
+
+  async function tryImportFromWorkouts() {
+    if (!supa || !user?.id) return;
+    // strategy: pick a workout for today's DOW from the highest week_index the user has
+    const di = dowIndex(new Date());
+    const { data: lastWeek, error: weekErr } = await supa
+      .from("workouts")
+      .select("week_index")
+      .eq("user_id", user.id)
+      .order("week_index", { ascending: false })
+      .limit(1);
+    if (weekErr) { setMsg(weekErr.message); return; }
+    const wk = lastWeek?.[0]?.week_index ?? null;
+    if (!wk) return; // user might not have cloud plan yet
+
+    const { data, error } = await supa
+      .from("workouts")
+      .select("title, blocks, focus, phase")
+      .eq("user_id", user.id)
+      .eq("week_index", wk)
+      .eq("day_index", di)
+      .limit(1);
+    if (error) { setMsg(error.message); return; }
+    const w = data?.[0];
+    if (w) {
+      setTitle(w.title || "");
+      setBlocks(Array.isArray(w.blocks) ? w.blocks : []);
+      setMsg(`Imported from week ${wk} • day ${di}`);
+    }
+  }
+
+  function blocksTextarea(value) {
+    // Convert between textarea (newline text) and string[]
+    setBlocks(
+      String(value)
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+  }
+
+  async function save() {
+    setMsg("");
+    if (!supa || !user?.id) { setMsg("Supabase not configured"); return; }
+    const payload = {
+      user_id: user.id,
+      ts: new Date().toISOString(),
+      session: { title, blocks },
+      completed,
+      readiness,
+      notes: notes || null,
+    };
+    let res;
+    if (sessionId) {
+      res = await supa.from("sessions").update(payload).eq("id", sessionId).select().single();
+    } else {
+      res = await supa.from("sessions").insert(payload).select().single();
+      if (!res.error) setSessionId(res.data.id);
+    }
+    if (res.error) { setMsg(res.error.message); return; }
+    setMsg("Saved.");
+  }
+
+  const estMins = React.useMemo(() => estimateMinutesFromBlocks(blocks), [blocks]);
+  const todayName = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dowIndex(new Date())];
+
+  return (
+    <section className="border border-slate-800 rounded-xl p-4">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-lg font-semibold">Train Today</h2>
+        <div className="text-xs text-slate-400">{msg}</div>
+      </div>
+
+      {loading ? (
+        <p className="text-sm">Loading…</p>
+      ) : (
+        <>
+          <div className="text-sm text-slate-300 mb-1">{todayName}</div>
+
+          <div className="space-y-3">
+            <div>
+              <label className="text-xs block mb-1">Title</label>
+              <input
+                className="border rounded px-2 py-1 w-full bg-slate-950"
+                placeholder="e.g., Run Threshold 3x6"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+              />
+            </div>
+
+            <div>
+              <label className="text-xs block mb-1">
+                Blocks <span className="text-slate-400">(one per line) • ~{estMins}′</span>
+              </label>
+              <textarea
+                className="border rounded px-2 py-1 w-full bg-slate-950 min-h-[96px]"
+                placeholder={"Warm-up 10′\n3 x 6′ steady; 2′ easy\nCooldown 10′"}
+                value={blocks.join("\n")}
+                onChange={(e) => blocksTextarea(e.target.value)}
+              />
+            </div>
+
+            <div className="flex items-center gap-4">
+              <label className="flex items-center gap-2 text-sm">
+                <input type="checkbox" checked={completed} onChange={(e) => setCompleted(e.target.checked)} />
+                Done
+              </label>
+
+              <div className="flex items-center gap-2">
+                <span className="text-sm">Readiness</span>
+                <input
+                  type="range"
+                  min="1"
+                  max="5"
+                  step="1"
+                  value={readiness}
+                  onChange={(e) => setReadiness(Number(e.target.value))}
+                />
+                <span className="text-sm">{readiness}/5</span>
+              </div>
+            </div>
+
+            <div>
+              <label className="text-xs block mb-1">Notes</label>
+              <textarea
+                className="border rounded px-2 py-1 w-full bg-slate-950 min-h-[64px]"
+                placeholder="How did it feel? Any issues?"
+                value={notes}
+                onChange={(e) => setNotes(e.target.value)}
+              />
+            </div>
+
+            <div className="flex gap-2">
+              <button className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500" onClick={save}>
+                Save session
+              </button>
+              <button className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600" onClick={tryImportFromWorkouts}>
+                Try import from cloud plan
+              </button>
+            </div>
+          </div>
+        </>
+      )}
+    </section>
+  );
+}
 export default function App(){
   function SharePage() {
   const [{ url, key }] = React.useState(() => safeGetEnv());
