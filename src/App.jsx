@@ -825,6 +825,9 @@ function HistoryPage({ user }) {
 }
 
 export default function App(){
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
+  return <SharePage />;
+}
   function SharePage() {
   const [{ url, key }] = React.useState(() => safeGetEnv());
   const token = React.useMemo(() => {
