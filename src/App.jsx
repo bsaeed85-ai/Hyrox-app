@@ -1027,12 +1027,8 @@ export default function App(){
           </div>
         </Card>
 
-        <Card title={`Train Today`}>
-          <div className="muted" style={{marginBottom:6}}>{(plan[idx]?.day)||"Mon"}</div>
-          <div style={{fontWeight:700}}>{(plan[idx]?.session?.type)||"Rest"}</div>
-          <ul style={{marginTop:6,paddingLeft:16}}>{(plan[idx]?.session?.blocks||["Walk 20′"]).map((b,i)=><li key={i}>{b}</li>)}</ul>
-          <div className="row" style={{marginTop:8}}><span className="muted">Readiness</span><input type="range" min={1} max={5} value={readiness} onChange={e=>setReadiness(Number(e.target.value))}/></div>
-        </Card>
+        <TrainTodayCard user={user} />
+
 
         <ThisWeek user={user} />
 
