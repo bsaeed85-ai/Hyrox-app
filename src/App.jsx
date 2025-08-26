@@ -17,6 +17,56 @@ function pacePerKmFrom5k(v){ const t=parseTimeToSeconds(v); return isFinite(t)?t
 function ergPace500From1k(v){ const t=parseTimeToSeconds(v); return isFinite(t)?t/2:135; }
 function save(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch{} }
 function load(k,f){ try{const v=localStorage.getItem(k); return v?JSON.parse(v):f;}catch{return f;} }
+/* ---------- helpers (add) ---------- */
+function safeGetEnv() {
+  const url =
+    (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ||
+    (typeof window !== "undefined" && window.VITE_SUPABASE_URL) ||
+    "";
+  const key =
+    (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ||
+    (typeof window !== "undefined" && window.VITE_SUPABASE_ANON_KEY) ||
+    "";
+  return { url, key };
+}
+
+function estimateMinutesFromBlocks(blocks) {
+  if (!Array.isArray(blocks)) return 0;
+  let total = 0;
+  for (const line of blocks) {
+    const s = String(line);
+
+    // match patterns like "3x6’" / "3 x 6 min"
+    const repsMatch = s.match(/(\d+)\s*[x×]\s*(\d+)\s*(?:min|m|′|')/i);
+    if (repsMatch) {
+      const reps = Number(repsMatch[1] || 0);
+      const mins = Number(repsMatch[2] || 0);
+      total += reps * mins;
+      continue;
+    }
+
+    // match simple minutes like "10 min", "12’"
+    const minMatch = s.match(/(\d+)\s*(?:min|m|′|')/i);
+    if (minMatch) {
+      total += Number(minMatch[1] || 0);
+      continue;
+    }
+  }
+  return total;
+}
+
+function weekKeyOf(d) {
+  const dt = new Date(d);
+  const day = dt.getDay(); // 0 Sun .. 6 Sat
+  const diffToMon = (day + 6) % 7; // 0 for Mon
+  dt.setHours(0, 0, 0, 0);
+  dt.setDate(dt.getDate() - diffToMon);
+  const y = dt.getFullYear();
+  const m = String(dt.getMonth() + 1).padStart(2, "0");
+  const dd = String(dt.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
+
 
 /* ---------- race twin ---------- */
 function estimateRaceFromBaseline(b){
@@ -146,25 +196,86 @@ function GuidedBaseline({ base, setBase }){
   return(<Card title="Guided Baseline"><div className="muted" style={{marginBottom:8}}>Use the stopwatch to time each test. Click Save after each, then Next.</div>{!atEnd?(<><div style={{fontWeight:600,marginBottom:6}}>{curr[1]}</div><Stopwatch running={running} onToggle={()=>setRunning(r=>!r)} onReset={()=>{setRunning(false);setSecElapsed(0);}} seconds={secElapsed}/><div className="row" style={{marginTop:8}}><button className="btn" onClick={saveTime}>Save time</button><button onClick={()=>{setIdx(i=>i+1); setRunning(false); setSecElapsed(0);}}>Next</button><button onClick={()=>setIdx(tests.length)}>Skip to summary</button></div><div className="muted" style={{marginTop:8}}>Saved: {tests.map(t=>base[t[0]]?t[1]:null).filter(Boolean).join(", ")||"None"}</div></>):(<><div style={{fontWeight:600,marginBottom:6}}>Summary</div><ul style={{margin:0,paddingLeft:16}}>{tests.map(t=><li key={t[0]}>{t[1]}: {base[t[0]]||"--:--"}</li>)}</ul></>)}</Card>);
 }
 
-/* ---------- Profile card (NEW) ---------- */
-function ProfileCard({ user, profile, setProfile }){
-  async function saveCloud(){
-    if(!supa||!user) return alert("Sign in first.");
-    const payload={ id:user.id, email:user.email||null, experience:profile.experience, goal:profile.goal };
-    const { error } = await supa.from("profiles").upsert(payload, { onConflict:"id" });
-    if(error) return alert("Error: "+error.message); alert("Profile saved.");
+/* ---------- Profile card (FIXED) ---------- */
+function ProfileCard({ user, profile, setProfile }) {
+  async function saveCloud() {
+    if (!supa || !user) return alert("Sign in first.");
+    const payload = {
+      id: user.id,
+      email: user.email || null,
+      experience: profile.experience,
+      goal: profile.goal,
+    };
+    const { error } = await supa.from("profiles").upsert(payload, { onConflict: "id" });
+    if (error) return alert("Error: " + error.message);
+    alert("Profile saved.");
   }
-  async function generateWeek1ToCloud(){
-  if(!supa||!user) return alert("Sign in first.");
-  if(!plan.length) return alert("No plan generated.");
-  const rows = plan.map((d,i)=>({
-    user_id:user.id, week_index:1, day_index:i, session_date:null,
-    title:d.session.type, blocks:d.session.blocks||[], focus:d.session.focus||null,
-    phase:d.phase, targets:null, completed:false
-  }));
-  const { error } = await supa.from("workouts").upsert(rows, { onConflict:"user_id,week_index,day_index" });
-  if(error) return alert("Error: "+error.message);
-  alert("Week 1 plan saved to cloud.");
+
+  async function loadCloud() {
+    if (!supa || !user) return alert("Sign in first.");
+    const { data, error } = await supa.from("profiles").select("*").eq("id", user.id).maybeSingle();
+    if (error) return alert("Error: " + error.message);
+    if (!data) return alert("No profile in cloud yet.");
+    setProfile({
+      experience: data.experience || "beginner",
+      goal: data.goal || "balanced",
+    });
+    alert("Profile loaded from cloud.");
+  }
+
+  async function generateWeek1ToCloud() {
+    if (!supa || !user) return alert("Sign in first.");
+    if (!plan.length) return alert("No plan generated.");
+    const rows = plan.map((d, i) => ({
+      user_id: user.id,
+      week_index: 1,
+      day_index: i,
+      session_date: null,
+      title: d.session.type,
+      blocks: d.session.blocks || [],
+      focus: d.session.focus || null,
+      phase: d.phase,
+      targets: null,
+      completed: false,
+    }));
+    const { error } = await supa.from("workouts").upsert(rows, { onConflict: "user_id,week_index,day_index" });
+    if (error) return alert("Error: " + error.message);
+    alert("Week 1 plan saved to cloud.");
+    window.dispatchEvent(new Event("workouts:changed"));
+  }
+
+  return (
+    <Card
+      title="Profile"
+      right={
+        <div className="row">
+          <button onClick={saveCloud}>Save to cloud</button>
+          <button onClick={loadCloud}>Load from cloud</button>
+        </div>
+      }
+    >
+      <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
+        <label className="row" style={{ gap: 6 }}>
+          <span className="muted">Experience</span>
+          <select value={profile.experience} onChange={(e) => setProfile({ ...profile, experience: e.target.value })}>
+            <option value="beginner">Beginner</option>
+            <option value="intermediate">Intermediate</option>
+            <option value="pro">Pro</option>
+          </select>
+        </label>
+        <label className="row" style={{ gap: 6 }}>
+          <span className="muted">Goal</span>
+          <select value={profile.goal} onChange={(e) => setProfile({ ...profile, goal: e.target.value })}>
+            <option value="balanced">Balanced</option>
+            <option value="endurance">Endurance</option>
+            <option value="strength">Strength</option>
+          </select>
+        </label>
+      </div>
+    </Card>
+  );
+}
+
 
   // 👇 Add this line so the ThisWeek panel refreshes immediately
   window.dispatchEvent(new Event("workouts:changed"));
@@ -847,11 +958,6 @@ export default function App(){
     if(error) return alert("Error: "+error.message);
     alert("Week 1 plan saved to cloud.");
   }
-
-  function TrainTodayCard({ user }) {
-  ...
-}
-
   const weekday=new Date().getDay(); const map=[6,0,1,2,3,4,5]; const idx=map[weekday]??0;
   const todays=plan[idx]||plan[0]||{ day:"Mon", session:{type:"Rest",blocks:["Walk 20′"]} };
   const [readiness,setReadiness]=React.useState(3);
