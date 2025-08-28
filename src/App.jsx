@@ -1075,12 +1075,36 @@ export default function App(){
   const paces=React.useMemo(()=>({ run5k:pacePerKmFrom5k(base.run5k||"25:00"), goalRun:analysis.splits.run8k/8, ski500:ergPace500From1k(base.ski1k||"4:30"), row500:ergPace500From1k(base.row1k||"4:00"), row2k500:ergPace500From1k(base.row1k||"4:00")+2 }),[base.run5k,base.ski1k,base.row1k,analysis.splits.run8k]);
   const adjusted=React.useMemo(()=>{ const s={...todays.session}; let blocks=s.blocks?[...s.blocks]:(s.notes?[s.notes]:[]); blocks=annotateBlocks(blocks,paces); const scale=(arr,mode)=>arr.map(line=>{ let out=line; if(mode==="easy"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Math.max(1,Math.round(Number(p1)*0.65))}×`).replace(/@ *[^;\n]+pace/g,"@ easy pace").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.round(Number(n)*1.3)}${String(u).toLowerCase().includes("min")?" min":"s"}`).replace(/EMOM *([0-9]+)[′']/i,(m,min)=>`EMOM ${Math.max(8,Math.round(Number(min)*0.85))}′`);} else if(mode==="hard"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Number(p1)+1}×`).replace(/@ *5k pace/g,"@ 5k pace − 5–8s/km").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.max(20,Math.round(Number(n)*0.85))}${String(u).toLowerCase().includes("min")?" min":"s"}`);} return out; }); if(readiness<=2){ s.type=`${s.type} (Easy)`; s.blocks=scale(blocks,"easy"); } else if(readiness>=4){ s.type=`${s.type} (Challenging)`; s.blocks=scale(blocks,"hard"); } else { s.blocks=scale(blocks,"normal"); } return s; },[todays,readiness,paces]);
 
-  function makeShareLink(){
-    const payload={ plan, analysis:{ total:analysis.total, splits:analysis.splits }, athlete:{ name:athlete.name, division:athlete.division, goalType:athlete.goalType, raceDate:athlete.raceDate } };
-    const enc=btoa(encodeURIComponent(JSON.stringify(payload)));
-    const url=`${window.location.origin}${window.location.pathname}?snapshot=${enc}`;
-    navigator.clipboard.writeText(url); alert("Share link copied!");
+  async function makeShareLink(){
+  if (!supa) return alert("Supabase not configured");
+  const { data: { user } } = await supa.auth.getUser();
+  if (!user) return alert("Please sign in first.");
+
+  // find active token
+  const { data: existing, error: selErr } = await supa
+    .from("public_shares")
+    .select("token")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
+  if (selErr) return alert(selErr.message);
+
+  let token = existing?.token;
+  if (!token) {
+    const { data: created, error: insErr } = await supa
+      .from("public_shares")
+      .insert({ user_id: user.id, status: "active" })
+      .select("token")
+      .single();
+    if (insErr) return alert(insErr.message);
+    token = created.token;
   }
+
+  const url = `${window.location.origin}/share/${token}`;
+  await navigator.clipboard.writeText(url);
+  alert("Share link copied!");
+}
+
 
   return (
     <>
