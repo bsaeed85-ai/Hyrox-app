@@ -907,3 +907,31 @@ function downloadCSV(filename, rows) {
   a.href = url; a.download = filename; a.click();
   URL.revokeObjectURL(url);
 }
+async function generateWeeksToCloud(nWeeks = 4, startWeek = 1) {
+  if (!supa || !user) return alert("Sign in first.");
+  if (!plan.length) return alert("No base week generated.");
+
+  const rows = [];
+  for (let w = 0; w < nWeeks; w++) {
+    // naive periodization: repeat the base week; you can vary later
+    plan.forEach((d, i) => {
+      rows.push({
+        user_id: user.id,
+        week_index: startWeek + w,
+        day_index: i,
+        session_date: null,
+        title: d.session.type,
+        blocks: d.session.blocks || [],
+        focus: d.session.focus || null,
+        phase: d.phase,
+        targets: null,
+        completed: false,
+      });
+    });
+  }
+
+  const { error } = await supa.from("workouts").upsert(rows, { onConflict: "user_id,week_index,day_index" });
+  if (error) return alert("Error: " + error.message);
+  alert(`${nWeeks} week(s) saved to cloud starting at week ${startWeek}.`);
+  window.dispatchEvent(new Event("workouts:changed"));
+}
