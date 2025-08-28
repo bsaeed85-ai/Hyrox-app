@@ -933,13 +933,9 @@ export default function App(){
   );
 }
 
-  const [snapshot,setSnapshot]=React.useState(null);
-  React.useEffect(()=>{ try{ const url=new URL(window.location.href); const snap=url.searchParams.get("snapshot"); if(snap){ setSnapshot(JSON.parse(decodeURIComponent(btoa.atob?atob(snap):atob(snap)))); } }catch{} },[]);
-  if(snapshot) return <div className="wrap"><h1>Shared plan</h1></div>;
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
   return <SharePage />;
 }
-
 
   const [athlete,setAthlete]=React.useState(load("hyrox.athlete",{ name:"", division:"Open", goalType:"Race", raceDate:"" }));
   const [base,setBase]=React.useState(load("hyrox.base",{ run5k:"25:00", ski1k:"4:30", row1k:"4:00", sledPush50m:"3:00", sledPull50m:"2:50", burpeeBroad80m:"6:00", farmer200m:"3:00", lunges100m:"4:30", wallballs100:22, readiness:4 }));
