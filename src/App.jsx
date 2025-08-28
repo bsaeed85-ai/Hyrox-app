@@ -942,3 +942,22 @@ async function clearCloudWeek(weekIndex = 1) {
   alert(`Week ${weekIndex} cleared.`);
   window.dispatchEvent(new Event("workouts:changed"));
 }
+right={
+  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+    <button className="btn" onClick={generateWeek1ToCloud}>Save Week 1 → Cloud</button>
+    <button className="btn" onClick={()=>generateWeeksToCloud(4, 1)}>Save 4 Weeks → Cloud</button>
+    <button className="btn" onClick={()=>{
+      // create a flat export from current `plan`
+      const flat = (plan || []).map(d => ({
+        day: d.day,
+        title: d.session?.type || "",
+        blocks: Array.isArray(d.session?.blocks) ? d.session.blocks.join(" | ") : "",
+        focus: d.session?.focus || "",
+        phase: d.phase || ""
+      }));
+      if (flat.length === 0) return alert("No plan to export.");
+      downloadCSV("hyrox-plan-week.csv", flat);
+    }}>Export Week (CSV)</button>
+    <button onClick={()=>clearCloudWeek(1)}>Clear Week 1</button>
+  </div>
+}
