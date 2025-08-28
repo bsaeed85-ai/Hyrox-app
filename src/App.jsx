@@ -1,7 +1,7 @@
 import React from "react";
 import { createClient } from "@supabase/supabase-js";
 
-/* ---------- Supabase ---------- */
+/* ---------- Supabase (global client) ---------- */
 const supa = (() => {
   const url = import.meta.env.VITE_SUPABASE_URL;
   const key = import.meta.env.VITE_SUPABASE_ANON_KEY;
@@ -17,44 +17,27 @@ function pacePerKmFrom5k(v){ const t=parseTimeToSeconds(v); return isFinite(t)?t
 function ergPace500From1k(v){ const t=parseTimeToSeconds(v); return isFinite(t)?t/2:135; }
 function save(k,v){ try{localStorage.setItem(k,JSON.stringify(v));}catch{} }
 function load(k,f){ try{const v=localStorage.getItem(k); return v?JSON.parse(v):f;}catch{return f;} }
-/* ---------- helpers (add) ---------- */
 function safeGetEnv() {
   const url =
     (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_URL) ||
-    (typeof window !== "undefined" && window.VITE_SUPABASE_URL) ||
-    "";
+    (typeof window !== "undefined" && window.VITE_SUPABASE_URL) || "";
   const key =
     (typeof import.meta !== "undefined" && import.meta.env && import.meta.env.VITE_SUPABASE_ANON_KEY) ||
-    (typeof window !== "undefined" && window.VITE_SUPABASE_ANON_KEY) ||
-    "";
+    (typeof window !== "undefined" && window.VITE_SUPABASE_ANON_KEY) || "";
   return { url, key };
 }
-
 function estimateMinutesFromBlocks(blocks) {
   if (!Array.isArray(blocks)) return 0;
   let total = 0;
   for (const line of blocks) {
     const s = String(line);
-
-    // match patterns like "3x6’" / "3 x 6 min"
     const repsMatch = s.match(/(\d+)\s*[x×]\s*(\d+)\s*(?:min|m|′|')/i);
-    if (repsMatch) {
-      const reps = Number(repsMatch[1] || 0);
-      const mins = Number(repsMatch[2] || 0);
-      total += reps * mins;
-      continue;
-    }
-
-    // match simple minutes like "10 min", "12’"
+    if (repsMatch) { total += Number(repsMatch[1]||0) * Number(repsMatch[2]||0); continue; }
     const minMatch = s.match(/(\d+)\s*(?:min|m|′|')/i);
-    if (minMatch) {
-      total += Number(minMatch[1] || 0);
-      continue;
-    }
+    if (minMatch) { total += Number(minMatch[1]||0); continue; }
   }
   return total;
 }
-
 function weekKeyOf(d) {
   const dt = new Date(d);
   const day = dt.getDay(); // 0 Sun .. 6 Sat
@@ -66,7 +49,6 @@ function weekKeyOf(d) {
   const dd = String(dt.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
-
 
 /* ---------- race twin ---------- */
 function estimateRaceFromBaseline(b){
@@ -193,19 +175,14 @@ function GuidedBaseline({ base, setBase }){
   React.useEffect(()=>{ if(!running) return; const id=setInterval(()=>setSecElapsed(s=>s+1),1000); return()=>clearInterval(id); },[running]);
   const atEnd=idx>=tests.length; const curr=tests[idx]||null;
   function saveTime(){ const mmss=secondsToMMSS(secElapsed); const k=tests[idx][0]; setBase({...base,[k]:mmss}); }
-  return(<Card title="Guided Baseline"><div className="muted" style={{marginBottom:8}}>Use the stopwatch to time each test. Click Save after each, then Next.</div>{!atEnd?(<><div style={{fontWeight:600,marginBottom:6}}>{curr[1]}</div><Stopwatch running={running} onToggle={()=>setRunning(r=>!r)} onReset={()=>{setRunning(false);setSecElapsed(0);}} seconds={secElapsed}/><div className="row" style={{marginTop:8}}><button className="btn" onClick={saveTime}>Save time</button><button onClick={()=>{setIdx(i=>i+1); setRunning(false); setSecElapsed(0);}}>Next</button><button onClick={()=>setIdx(tests.length)}>Skip to summary</button></div><div className="muted" style={{marginTop:8}}>Saved: {tests.map(t=>base[t[0]]?t[1]:null).filter(Boolean).join(", ")||"None"}</div></>):(<><div style={{fontWeight:600,marginBottom:6}}>Summary</div><ul style={{margin:0,paddingLeft:16}}>{tests.map(t=><li key={t[0]}>{t[1]}: {base[t[0]]||"--:--"}</li>)}</ul></>)}</Card>);
+  return(<Card title="Guided Baseline"><div className="muted" style={{marginBottom:8}}>Use the stopwatch to time each test. Click Save after each, then Next.</div>{!atEnd?(<><div style={{fontWeight:600,marginBottom:6}}>{curr[1]}</div><Stopwatch running={running} onToggle={()=>setRunning(r=>!r)} onReset={()=>{setRunning(false);setSecElapsed(0);}} seconds={secElapsed}/><div className="row" style={{marginTop:8}}><button className="btn" onClick={saveTime}>Save time</button><button className="btn" onClick={()=>{setIdx(i=>i+1); setRunning(false); setSecElapsed(0);}}>Next</button><button onClick={()=>setIdx(tests.length)}>Skip to summary</button></div><div className="muted" style={{marginTop:8}}>Saved: {tests.map(t=>base[t[0]]?t[1]:null).filter(Boolean).join(", ")||"None"}</div></>):(<><div style={{fontWeight:600,marginBottom:6}}>Summary</div><ul style={{margin:0,paddingLeft:16}}>{tests.map(t=><li key={t[0]}>{t[1]}: {base[t[0]]||"--:--"}</li>)}</ul></>)}</Card>);
 }
 
-/* ---------- Profile card (FIXED) ---------- */
+/* ---------- Profile card ---------- */
 function ProfileCard({ user, profile, setProfile }) {
   async function saveCloud() {
     if (!supa || !user) return alert("Sign in first.");
-    const payload = {
-      id: user.id,
-      email: user.email || null,
-      experience: profile.experience,
-      goal: profile.goal,
-    };
+    const payload = { id: user.id, email: user.email || null, experience: profile.experience, goal: profile.goal };
     const { error } = await supa.from("profiles").upsert(payload, { onConflict: "id" });
     if (error) return alert("Error: " + error.message);
     alert("Profile saved.");
@@ -216,43 +193,14 @@ function ProfileCard({ user, profile, setProfile }) {
     const { data, error } = await supa.from("profiles").select("*").eq("id", user.id).maybeSingle();
     if (error) return alert("Error: " + error.message);
     if (!data) return alert("No profile in cloud yet.");
-    setProfile({
-      experience: data.experience || "beginner",
-      goal: data.goal || "balanced",
-    });
+    setProfile({ experience: data.experience || "beginner", goal: data.goal || "balanced" });
     alert("Profile loaded from cloud.");
-  }
-
-  async function generateWeek1ToCloud() {
-    if (!supa || !user) return alert("Sign in first.");
-    if (!plan.length) return alert("No plan generated.");
-    const rows = plan.map((d, i) => ({
-      user_id: user.id,
-      week_index: 1,
-      day_index: i,
-      session_date: null,
-      title: d.session.type,
-      blocks: d.session.blocks || [],
-      focus: d.session.focus || null,
-      phase: d.phase,
-      targets: null,
-      completed: false,
-    }));
-    const { error } = await supa.from("workouts").upsert(rows, { onConflict: "user_id,week_index,day_index" });
-    if (error) return alert("Error: " + error.message);
-    alert("Week 1 plan saved to cloud.");
-    window.dispatchEvent(new Event("workouts:changed"));
   }
 
   return (
     <Card
       title="Profile"
-      right={
-        <div className="row">
-          <button onClick={saveCloud}>Save to cloud</button>
-          <button onClick={loadCloud}>Load from cloud</button>
-        </div>
-      }
+      right={<div className="row"><button onClick={saveCloud}>Save to cloud</button><button onClick={loadCloud}>Load from cloud</button></div>}
     >
       <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
         <label className="row" style={{ gap: 6 }}>
@@ -276,63 +224,25 @@ function ProfileCard({ user, profile, setProfile }) {
   );
 }
 
-
-  // 👇 Add this line so the ThisWeek panel refreshes immediately
-  window.dispatchEvent(new Event("workouts:changed"));
-}
-
-  }
-  return (
-    <Card title="Profile" right={<div className="row"><button onClick={saveCloud}>Save to cloud</button><button onClick={loadCloud}>Load from cloud</button></div>}>
-      <div className="row" style={{gap:12,flexWrap:"wrap"}}>
-        <label className="row" style={{gap:6}}>
-          <span className="muted">Experience</span>
-          <select value={profile.experience} onChange={e=>setProfile({...profile,experience:e.target.value})}>
-            <option value="beginner">Beginner</option>
-            <option value="intermediate">Intermediate</option>
-            <option value="pro">Pro</option>
-          </select>
-        </label>
-        <label className="row" style={{gap:6}}>
-          <span className="muted">Goal</span>
-          <select value={profile.goal} onChange={e=>setProfile({...profile,goal:e.target.value})}>
-            <option value="balanced">Balanced</option>
-            <option value="endurance">Endurance</option>
-            <option value="strength">Strength</option>
-          </select>
-        </label>
-      </div>
-    </Card>
-  );
-
-/* ---------- This Week from cloud (NEW) ---------- */
+/* ---------- This Week (cloud) ---------- */
 function ThisWeek({ user }) {
-  const [groups, setGroups] = React.useState([]); // [{day_index, items: [...] }]
-  const [open, setOpen] = React.useState(new Set()); // accordion
+  const [groups, setGroups] = React.useState([]);
+  const [open, setOpen] = React.useState(new Set());
   const [loading, setLoading] = React.useState(false);
   const [err, setErr] = React.useState("");
-
   const days = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 
   async function fetchWeek() {
-    if (!supa || !user) {
-      setGroups([]);
-      return;
-    }
-    setLoading(true);
-    setErr("");
+    if (!supa || !user) { setGroups([]); return; }
+    setLoading(true); setErr("");
     const { data, error } = await supa
       .from("workouts")
       .select("*")
       .eq("user_id", user.id)
       .eq("week_index", 1)
       .order("day_index", { ascending: true });
-
-    if (error) {
-      setErr(error.message);
-      setGroups([]);
-    } else {
-      // group by day_index
+    if (error) { setErr(error.message); setGroups([]); }
+    else {
       const byDay = new Map();
       (data || []).forEach((r) => {
         const key = r.day_index ?? 0;
@@ -340,8 +250,8 @@ function ThisWeek({ user }) {
         byDay.get(key).push(r);
       });
       const grouped = Array.from(byDay.entries())
-        .sort((a, b) => a[0] - b[0])
-        .map(([day_index, items]) => ({ day_index, items }));
+        .sort((a,b)=>a[0]-b[0])
+        .map(([day_index,items])=>({day_index,items}));
       setGroups(grouped);
     }
     setLoading(false);
@@ -349,116 +259,73 @@ function ThisWeek({ user }) {
 
   async function toggleComplete(row) {
     const newVal = !row.completed;
-    // optimistic UI
-    setGroups((g) =>
-      g.map((grp) => ({
-        ...grp,
-        items: grp.items.map((it) =>
-          it.id === row.id ? { ...it, completed: newVal } : it
-        ),
-      }))
-    );
-    const { error } = await supa.from("workouts").update({ completed: newVal }).eq("id", row.id);
+    setGroups((g)=>g.map((grp)=>({...grp,items:grp.items.map((it)=>it.id===row.id?{...it,completed:newVal}:it)})));
+    const { error } = await supa.from("workouts").update({ completed:newVal }).eq("id", row.id);
     if (error) {
-      alert("Error: " + error.message);
-      // revert on failure
-      setGroups((g) =>
-        g.map((grp) => ({
-          ...grp,
-          items: grp.items.map((it) =>
-            it.id === row.id ? { ...it, completed: row.completed } : it
-          ),
-        }))
-      );
+      alert("Error: "+error.message);
+      setGroups((g)=>g.map((grp)=>({...grp,items:grp.items.map((it)=>it.id===row.id?{...it,completed:row.completed}:it)})));
     }
   }
-
   async function saveRpeNotes(row, rpe, notes) {
     const { error } = await supa.from("workouts").update({ rpe, notes }).eq("id", row.id);
     if (error) alert("Error: " + error.message);
   }
-
   function toggleAccordion(dayIndex) {
-    setOpen((o) => {
-      const next = new Set(o);
-      if (next.has(dayIndex)) next.delete(dayIndex);
-      else next.add(dayIndex);
-      return next;
-    });
+    setOpen((o)=>{ const next=new Set(o); next.has(dayIndex)?next.delete(dayIndex):next.add(dayIndex); return next; });
   }
 
   React.useEffect(() => {
     fetchWeek();
-    // listen for “workouts changed” events so this refreshes right after generate
     const onChanged = () => fetchWeek();
     window.addEventListener("workouts:changed", onChanged);
     return () => window.removeEventListener("workouts:changed", onChanged);
   }, [user?.id]);
 
   return (
-    <Card
-      title="This Week (cloud)"
-      right={<button onClick={fetchWeek} disabled={loading}>{loading ? "Refreshing…" : "Refresh"}</button>}
-    >
+    <Card title="This Week (cloud)" right={<button onClick={fetchWeek} disabled={loading}>{loading?"Refreshing…":"Refresh"}</button>}>
       {err && <div className="muted" style={{ color: "#fca5a5" }}>Error: {err}</div>}
-      {!loading && (!groups || groups.length === 0) ? (
-        <div className="muted">No workouts saved to cloud yet.</div>
-      ) : null}
-
-      <div className="grid" style={{ display: "grid", gridTemplateColumns: "1fr", gap: 10 }}>
-        {groups.map((grp) => {
+      {!loading && (!groups || groups.length === 0) ? <div className="muted">No workouts saved to cloud yet.</div> : null}
+      <div className="grid" style={{ display:"grid", gridTemplateColumns:"1fr", gap:10 }}>
+        {groups.map((grp)=>{
           const dayName = days[grp.day_index] ?? `Day ${grp.day_index}`;
           const isOpen = open.has(grp.day_index);
           return (
-            <div key={grp.day_index} className="card" style={{ padding: 12 }}>
-              <div className="row" style={{ justifyContent: "space-between", cursor: "pointer" }} onClick={() => toggleAccordion(grp.day_index)}>
-                <div style={{ fontWeight: 700 }}>{dayName}</div>
+            <div key={grp.day_index} className="card" style={{ padding:12 }}>
+              <div className="row" style={{ justifyContent:"space-between", cursor:"pointer" }} onClick={()=>toggleAccordion(grp.day_index)}>
+                <div style={{ fontWeight:700 }}>{dayName}</div>
                 <div className="muted">{isOpen ? "Hide" : "Show"}</div>
               </div>
-
               {isOpen && (
-                <div style={{ marginTop: 8, display: "grid", gap: 8 }}>
-                  {grp.items.map((w) => (
-                    <div key={w.id} className="card" style={{ padding: 12 }}>
-                      <div className="row" style={{ justifyContent: "space-between" }}>
+                <div style={{ marginTop:8, display:"grid", gap:8 }}>
+                  {grp.items.map((w)=>(
+                    <div key={w.id} className="card" style={{ padding:12 }}>
+                      <div className="row" style={{ justifyContent:"space-between" }}>
                         <div>
-                          <div style={{ fontWeight: 700 }}>{w.title}</div>
-                          <div className="muted" style={{ fontSize: 12 }}>
-                            {w.phase ? `Phase: ${w.phase}` : null}
-                            {w.focus ? ` • Focus: ${w.focus}` : null}
+                          <div style={{ fontWeight:700 }}>{w.title}</div>
+                          <div className="muted" style={{ fontSize:12 }}>
+                            {w.phase ? `Phase: ${w.phase}` : null}{w.focus ? ` • Focus: ${w.focus}` : null}
                           </div>
                         </div>
-                        <label className="row" style={{ gap: 6 }}>
-                          <input type="checkbox" checked={!!w.completed} onChange={() => toggleComplete(w)} />
+                        <label className="row" style={{ gap:6 }}>
+                          <input type="checkbox" checked={!!w.completed} onChange={()=>toggleComplete(w)} />
                           <span className="muted">Completed</span>
                         </label>
                       </div>
-
-                      {Array.isArray(w.blocks) && w.blocks.length > 0 ? (
-                        <ul style={{ margin: "6px 0 0", paddingLeft: 16 }}>
-                          {w.blocks.map((b, i) => (
-                            <li key={i}>{b}</li>
-                          ))}
+                      {Array.isArray(w.blocks) && w.blocks.length>0 ? (
+                        <ul style={{ margin:"6px 0 0", paddingLeft:16 }}>
+                          {w.blocks.map((b,i)=>(<li key={i}>{b}</li>))}
                         </ul>
-                      ) : (
-                        <div className="muted" style={{ marginTop: 6 }}>No blocks specified.</div>
-                      )}
-
-                      <div className="row" style={{ marginTop: 10, gap: 8, flexWrap: "wrap" }}>
+                      ) : <div className="muted" style={{ marginTop:6 }}>No blocks specified.</div>}
+                      <div className="row" style={{ marginTop:10, gap:8, flexWrap:"wrap" }}>
                         <input
-                          placeholder="RPE (1–10)"
-                          defaultValue={w.rpe ?? ""}
-                          onBlur={(e) => saveRpeNotes(w, e.target.value === "" ? null : Number(e.target.value), w.notes ?? null)}
-                          style={{ width: 90 }}
-                          type="number"
-                          min={1}
-                          max={10}
+                          placeholder="RPE (1–10)" defaultValue={w.rpe ?? ""}
+                          onBlur={(e)=>saveRpeNotes(w, e.target.value===""?null:Number(e.target.value), w.notes ?? null)}
+                          style={{ width:90 }} type="number" min={1} max={10}
                         />
                         <input
-                          placeholder="Notes"
-                          defaultValue={w.notes ?? ""}
-                          onBlur={(e) => saveRpeNotes(w, w.rpe ?? null, e.target.value)}
-                          style={{ flex: 1, minWidth: 200 }}
+                          placeholder="Notes" defaultValue={w.notes ?? ""}
+                          onBlur={(e)=>saveRpeNotes(w, w.rpe ?? null, e.target.value)}
+                          style={{ flex:1, minWidth:200 }}
                         />
                       </div>
                     </div>
@@ -473,43 +340,31 @@ function ThisWeek({ user }) {
   );
 }
 
-/* ---------- Main App ---------- */
-function startOfDayISO(d = new Date()) {
-  const x = new Date(d);
-  x.setHours(0, 0, 0, 0);
-  return x.toISOString();
-}
-function endOfDayISO(d = new Date()) {
-  const x = new Date(d);
-  x.setHours(23, 59, 59, 999);
-  return x.toISOString();
-}
-function dowIndex(d = new Date()) {
-  // 0=Mon ... 6=Sun (to match our week/day convention used in workouts)
-  const js = d.getDay(); // 0=Sun..6=Sat
-  return js === 0 ? 6 : js - 1;
-}
+/* ---------- Train Today helpers ---------- */
+function startOfDayISO(d = new Date()) { const x = new Date(d); x.setHours(0,0,0,0); return x.toISOString(); }
+function endOfDayISO(d = new Date()) { const x = new Date(d); x.setHours(23,59,59,999); return x.toISOString(); }
+function dowIndex(d = new Date()) { const js=d.getDay(); return js===0?6:js-1; }
 
+/* ---------- Train Today ---------- */
 function TrainTodayCard({ user }) {
   const [{ url, key }] = React.useState(() => safeGetEnv());
-  const supa = React.useMemo(() => (url && key ? createClient(url, key) : null), [url, key]);
+  const supaLocal = React.useMemo(() => (url && key ? createClient(url, key) : null), [url, key]);
 
   const [loading, setLoading] = React.useState(true);
   const [sessionId, setSessionId] = React.useState(null);
   const [title, setTitle] = React.useState("");
-  const [blocks, setBlocks] = React.useState([]); // array of strings
+  const [blocks, setBlocks] = React.useState([]);
   const [completed, setCompleted] = React.useState(false);
   const [readiness, setReadiness] = React.useState(3);
   const [notes, setNotes] = React.useState("");
   const [msg, setMsg] = React.useState("");
 
-  // Load today's session if it exists
   React.useEffect(() => {
     let alive = true;
     (async () => {
-      if (!supa || !user?.id) { setMsg("Not signed in"); setLoading(false); return; }
+      if (!supaLocal || !user?.id) { setMsg("Not signed in"); setLoading(false); return; }
       setLoading(true);
-      const { data, error } = await supa
+      const { data, error } = await supaLocal
         .from("sessions")
         .select("id, ts, session, completed, readiness, notes")
         .eq("user_id", user.id)
@@ -519,7 +374,6 @@ function TrainTodayCard({ user }) {
         .limit(1);
       if (!alive) return;
       if (error) { setMsg(error.message); setLoading(false); return; }
-
       const row = (data && data[0]) || null;
       if (row) {
         setSessionId(row.id);
@@ -530,20 +384,17 @@ function TrainTodayCard({ user }) {
         setReadiness(row.readiness ?? 3);
         setNotes(row.notes || "");
       } else {
-        // Nothing logged yet → try importing something helpful from workouts
         await tryImportFromWorkouts();
       }
       setLoading(false);
     })();
     return () => { alive = false; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [supa, user?.id]);
+  }, [supaLocal, user?.id]);
 
   async function tryImportFromWorkouts() {
-    if (!supa || !user?.id) return;
-    // strategy: pick a workout for today's DOW from the highest week_index the user has
+    if (!supaLocal || !user?.id) return;
     const di = dowIndex(new Date());
-    const { data: lastWeek, error: weekErr } = await supa
+    const { data: lastWeek, error: weekErr } = await supaLocal
       .from("workouts")
       .select("week_index")
       .eq("user_id", user.id)
@@ -551,9 +402,8 @@ function TrainTodayCard({ user }) {
       .limit(1);
     if (weekErr) { setMsg(weekErr.message); return; }
     const wk = lastWeek?.[0]?.week_index ?? null;
-    if (!wk) return; // user might not have cloud plan yet
-
-    const { data, error } = await supa
+    if (!wk) return;
+    const { data, error } = await supaLocal
       .from("workouts")
       .select("title, blocks, focus, phase")
       .eq("user_id", user.id)
@@ -570,18 +420,12 @@ function TrainTodayCard({ user }) {
   }
 
   function blocksTextarea(value) {
-    // Convert between textarea (newline text) and string[]
-    setBlocks(
-      String(value)
-        .split("\n")
-        .map((s) => s.trim())
-        .filter(Boolean)
-    );
+    setBlocks(String(value).split("\n").map((s)=>s.trim()).filter(Boolean));
   }
 
   async function save() {
     setMsg("");
-    if (!supa || !user?.id) { setMsg("Supabase not configured"); return; }
+    if (!supaLocal || !user?.id) { setMsg("Supabase not configured"); return; }
     const payload = {
       user_id: user.id,
       ts: new Date().toISOString(),
@@ -592,9 +436,9 @@ function TrainTodayCard({ user }) {
     };
     let res;
     if (sessionId) {
-      res = await supa.from("sessions").update(payload).eq("id", sessionId).select().single();
+      res = await supaLocal.from("sessions").update(payload).eq("id", sessionId).select().single();
     } else {
-      res = await supa.from("sessions").insert(payload).select().single();
+      res = await supaLocal.from("sessions").insert(payload).select().single();
       if (!res.error) setSessionId(res.data.id);
     }
     if (res.error) { setMsg(res.error.message); return; }
@@ -602,7 +446,7 @@ function TrainTodayCard({ user }) {
   }
 
   const estMins = React.useMemo(() => estimateMinutesFromBlocks(blocks), [blocks]);
-  const todayName = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"][dowIndex(new Date())];
+  const todayName = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][dowIndex(new Date())];
 
   return (
     <section className="border border-slate-800 rounded-xl p-4">
@@ -610,73 +454,36 @@ function TrainTodayCard({ user }) {
         <h2 className="text-lg font-semibold">Train Today</h2>
         <div className="text-xs text-slate-400">{msg}</div>
       </div>
-
-      {loading ? (
-        <p className="text-sm">Loading…</p>
-      ) : (
+      {loading ? <p className="text-sm">Loading…</p> : (
         <>
           <div className="text-sm text-slate-300 mb-1">{todayName}</div>
-
           <div className="space-y-3">
             <div>
               <label className="text-xs block mb-1">Title</label>
-              <input
-                className="border rounded px-2 py-1 w-full bg-slate-950"
-                placeholder="e.g., Run Threshold 3x6"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
+              <input className="border rounded px-2 py-1 w-full bg-slate-950" placeholder="e.g., Run Threshold 3x6" value={title} onChange={(e)=>setTitle(e.target.value)} />
             </div>
-
             <div>
-              <label className="text-xs block mb-1">
-                Blocks <span className="text-slate-400">(one per line) • ~{estMins}′</span>
-              </label>
-              <textarea
-                className="border rounded px-2 py-1 w-full bg-slate-950 min-h-[96px]"
-                placeholder={"Warm-up 10′\n3 x 6′ steady; 2′ easy\nCooldown 10′"}
-                value={blocks.join("\n")}
-                onChange={(e) => blocksTextarea(e.target.value)}
-              />
+              <label className="text-xs block mb-1">Blocks <span className="text-slate-400">(one per line) • ~{estMins}′</span></label>
+              <textarea className="border rounded px-2 py-1 w-full bg-slate-950 min-h-[96px]" placeholder={"Warm-up 10′\n3 x 6′ steady; 2′ easy\nCooldown 10′"} value={blocks.join("\n")} onChange={(e)=>blocksTextarea(e.target.value)} />
             </div>
-
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={completed} onChange={(e) => setCompleted(e.target.checked)} />
+                <input type="checkbox" checked={completed} onChange={(e)=>setCompleted(e.target.checked)} />
                 Done
               </label>
-
               <div className="flex items-center gap-2">
                 <span className="text-sm">Readiness</span>
-                <input
-                  type="range"
-                  min="1"
-                  max="5"
-                  step="1"
-                  value={readiness}
-                  onChange={(e) => setReadiness(Number(e.target.value))}
-                />
+                <input type="range" min="1" max="5" step="1" value={readiness} onChange={(e)=>setReadiness(Number(e.target.value))} />
                 <span className="text-sm">{readiness}/5</span>
               </div>
             </div>
-
             <div>
               <label className="text-xs block mb-1">Notes</label>
-              <textarea
-                className="border rounded px-2 py-1 w-full bg-slate-950 min-h-[64px]"
-                placeholder="How did it feel? Any issues?"
-                value={notes}
-                onChange={(e) => setNotes(e.target.value)}
-              />
+              <textarea className="border rounded px-2 py-1 w-full bg-slate-950 min-h-[64px]" placeholder="How did it feel? Any issues?" value={notes} onChange={(e)=>setNotes(e.target.value)} />
             </div>
-
             <div className="flex gap-2">
-              <button className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500" onClick={save}>
-                Save session
-              </button>
-              <button className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600" onClick={tryImportFromWorkouts}>
-                Try import from cloud plan
-              </button>
+              <button className="px-3 py-1.5 rounded-lg bg-sky-600 hover:bg-sky-500" onClick={save}>Save session</button>
+              <button className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600" onClick={tryImportFromWorkouts}>Try import from cloud plan</button>
             </div>
           </div>
         </>
@@ -684,8 +491,8 @@ function TrainTodayCard({ user }) {
     </section>
   );
 }
-/* ---------- HISTORY PAGE (paste above `export default function ...`) ---------- */
 
+/* ---------- History (not routed, but ready to use) ---------- */
 function groupByWeek(rows) {
   const by = {};
   for (const r of rows) {
@@ -696,10 +503,9 @@ function groupByWeek(rows) {
   }
   return by;
 }
-
 function HistoryPage({ user }) {
   const [{ url, key }] = React.useState(() => safeGetEnv());
-  const supa = React.useMemo(() => (url && key ? createClient(url, key) : null), [url, key]);
+  const supaLocal = React.useMemo(() => (url && key ? createClient(url, key) : null), [url, key]);
   const [loading, setLoading] = React.useState(true);
   const [sessions, setSessions] = React.useState([]);
   const [prs, setPrs] = React.useState([]);
@@ -708,59 +514,36 @@ function HistoryPage({ user }) {
   React.useEffect(() => {
     let alive = true;
     (async () => {
-      if (!supa || !user?.id) { setErr("Not signed in"); setLoading(false); return; }
-
-      // Pull last ~8 weeks of sessions
-      const since = new Date();
-      since.setDate(since.getDate() - 56);
+      if (!supaLocal || !user?.id) { setErr("Not signed in"); setLoading(false); return; }
+      const since = new Date(); since.setDate(since.getDate()-56);
       const [sRes, pRes] = await Promise.all([
-        supa.from("sessions")
-            .select("id, ts, session, completed, readiness")
-            .eq("user_id", user.id)
-            .gte("ts", since.toISOString())
-            .order("ts", { ascending: false }),
-        supa.from("prs")
-            .select("*")
-            .eq("user_id", user.id)
-            .order("created_at", { ascending: false })
-            .limit(12),
+        supaLocal.from("sessions").select("id, ts, session, completed, readiness").eq("user_id", user.id).gte("ts", since.toISOString()).order("ts", { ascending: false }),
+        supaLocal.from("prs").select("*").eq("user_id", user.id).order("created_at", { ascending: false }).limit(12),
       ]);
-
       if (!alive) return;
       if (sRes.error) setErr(sRes.error.message);
-      if (pRes.error) setErr((e) => e || pRes.error.message);
+      if (pRes.error) setErr((e)=>e||pRes.error.message);
       setSessions(sRes.data || []);
       setPrs(pRes.data || []);
       setLoading(false);
     })();
     return () => { alive = false; };
-  }, [supa, user?.id]);
+  }, [supaLocal, user?.id]);
 
   const byWeek = React.useMemo(() => groupByWeek(sessions), [sessions]);
-  const weekKeys = React.useMemo(
-    () => Object.keys(byWeek).sort((a, b) => (a < b ? 1 : -1)),
-    [byWeek]
-  );
+  const weekKeys = React.useMemo(() => Object.keys(byWeek).sort((a,b)=> (a<b?1:-1)), [byWeek]);
 
-  // Compute a minutes bar per week
   const weekStats = React.useMemo(() => {
     const arr = weekKeys.map((wk) => {
       const rows = byWeek[wk];
       const total = rows.length;
       const done = rows.filter((r) => r.completed).length;
-      const comp = total ? Math.round((done / total) * 100) : 0;
-      const mins = rows.reduce(
-        (acc, r) => acc + estimateMinutesFromBlocks(r.session?.blocks || []),
-        0
-      );
-      const avgReadiness = total
-        ? Math.round(
-            (rows.reduce((a, r) => a + (r.readiness || 0), 0) / total) * 10
-          ) / 10
-        : 0;
+      const comp = total ? Math.round((done/total)*100) : 0;
+      const mins = rows.reduce((acc,r)=>acc+estimateMinutesFromBlocks(r.session?.blocks||[]),0);
+      const avgReadiness = total ? Math.round((rows.reduce((a,r)=>a+(r.readiness||0),0)/total)*10)/10 : 0;
       return { wk, total, done, comp, mins, avgReadiness };
     });
-    const maxMins = Math.max(60, ...arr.map((x) => x.mins));
+    const maxMins = Math.max(60, ...arr.map((x)=>x.mins));
     return { rows: arr, maxMins };
   }, [byWeek, weekKeys]);
 
@@ -770,48 +553,30 @@ function HistoryPage({ user }) {
         <h2 className="text-lg font-semibold">History</h2>
         <div className="text-xs text-slate-400">{err}</div>
       </div>
-
-      {loading ? (
-        <p className="text-sm">Loading…</p>
-      ) : (
+      {loading ? <p className="text-sm">Loading…</p> : (
         <>
-          {/* Weekly bars */}
           <div className="space-y-2">
-            {weekStats.rows.length === 0 && (
-              <p className="text-sm">No sessions logged yet.</p>
-            )}
-            {weekStats.rows.map(({ wk, mins, done, total, comp, avgReadiness }) => (
+            {weekStats.rows.length===0 && <p className="text-sm">No sessions logged yet.</p>}
+            {weekStats.rows.map(({ wk, mins, done, total, comp, avgReadiness })=>(
               <div key={wk}>
                 <div className="flex items-center justify-between text-xs mb-1">
                   <span className="text-slate-300">Week of {wk}</span>
-                  <span className="text-slate-400">
-                    {done}/{total} • {comp}% • ~{mins}′ • readiness {avgReadiness}/5
-                  </span>
+                  <span className="text-slate-400">{done}/{total} • {comp}% • ~{mins}′ • readiness {avgReadiness}/5</span>
                 </div>
                 <div className="w-full h-2 bg-slate-800 rounded">
-                  <div
-                    className="h-2 bg-sky-500 rounded"
-                    style={{ width: `${Math.min(100, Math.round((mins / weekStats.maxMins) * 100))}%` }}
-                  />
+                  <div className="h-2 bg-sky-500 rounded" style={{ width: `${Math.min(100, Math.round((mins/weekStats.maxMins)*100))}%` }} />
                 </div>
               </div>
             ))}
           </div>
-
-          {/* Recent PRs */}
           <div className="mt-6">
             <div className="text-sm font-semibold mb-2">Recent PRs</div>
-            {prs.length === 0 ? (
-              <p className="text-sm">No PRs yet</p>
-            ) : (
+            {prs.length===0 ? <p className="text-sm">No PRs yet</p> : (
               <ul className="text-sm grid md:grid-cols-2 gap-2">
-                {prs.map((pr) => (
+                {prs.map((pr)=>(
                   <li key={pr.id} className="border border-slate-800 rounded px-2 py-1 flex items-center justify-between">
                     <span>{pr.exercise}</span>
-                    <span className="font-mono">
-                      {pr.is_time ? secondsToMMSS(pr.value_num) : pr.value}
-                      {pr.unit ? ` ${pr.unit}` : ""}
-                    </span>
+                    <span className="font-mono">{pr.is_time ? secondsToMMSS(pr.value_num) : pr.value}{pr.unit ? ` ${pr.unit}` : ""}</span>
                   </li>
                 ))}
               </ul>
@@ -822,17 +587,15 @@ function HistoryPage({ user }) {
     </section>
   );
 }
+
+/* ---------- Share Page (top-level) ---------- */
 function SharePage() {
   const [{ url, key }] = React.useState(() => safeGetEnv());
-
-  // token from /share/:token
   const token = React.useMemo(() => {
     if (typeof location === "undefined") return "";
     const m = location.pathname.match(/\/share\/([^/?#]+)/);
     return m ? m[1] : "";
   }, []);
-
-  // client that sends token as header for RLS policies
   const sclient = React.useMemo(() => {
     if (!url || !key || !token) return null;
     return createClient(url, key, { global: { headers: { "x-invite-token": token } } });
@@ -880,15 +643,15 @@ function SharePage() {
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Week-by-Week Workouts</h2>
-        {workouts.length === 0 ? <p className="text-sm">No workouts visible for this token.</p> : (
+        {workouts.length===0 ? <p className="text-sm">No workouts visible for this token.</p> : (
           <ul className="grid md:grid-cols-2 gap-2">
-            {workouts.map((w, i) => (
+            {workouts.map((w,i)=>(
               <li key={`${w.week_index}-${w.day_index}-${i}`} className="border border-slate-800 rounded-xl p-3">
                 <div className="text-sm font-semibold">Week {w.week_index} • Day {w.day_index} {w.session_date ? `• ${w.session_date}` : ""}</div>
                 <div className="text-sm mt-1">{w.title}</div>
-                {Array.isArray(w.blocks) && w.blocks.length > 0 && (
+                {Array.isArray(w.blocks) && w.blocks.length>0 && (
                   <ul className="text-xs mt-2 list-disc pl-5 space-y-1">
-                    {w.blocks.map((b, j) => <li key={j}>{b}</li>)}
+                    {w.blocks.map((b,j)=>(<li key={j}>{b}</li>))}
                   </ul>
                 )}
                 <div className="text-xs text-slate-400 mt-1">{w.focus} • {w.phase}</div>
@@ -900,14 +663,12 @@ function SharePage() {
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Personal Records</h2>
-        {prs.length === 0 ? <p className="text-sm">No PRs shared yet.</p> : (
+        {prs.length===0 ? <p className="text-sm">No PRs shared yet.</p> : (
           <ul className="text-sm grid md:grid-cols-2 gap-2">
-            {prs.map((r, i) => (
+            {prs.map((r,i)=>(
               <li key={i} className="border border-slate-800 rounded px-2 py-1 flex items-center justify-between">
                 <span>{r.exercise}</span>
-                <span className="font-mono">
-                  {r.is_time ? secondsToMMSS(r.value_num) : r.value}{r.unit ? ` ${r.unit}` : ""}
-                </span>
+                <span className="font-mono">{r.is_time ? secondsToMMSS(r.value_num) : r.value}{r.unit ? ` ${r.unit}` : ""}</span>
               </li>
             ))}
           </ul>
@@ -916,9 +677,9 @@ function SharePage() {
 
       <section>
         <h2 className="text-lg font-semibold mb-2">Weekly Summaries</h2>
-        {cards.length === 0 ? <p className="text-sm">No summaries yet.</p> : (
+        {cards.length===0 ? <p className="text-sm">No summaries yet.</p> : (
           <ul className="grid md:grid-cols-2 gap-2">
-            {cards.map((card, i) => (
+            {cards.map((card,i)=>(
               <li key={`${card.week}-${i}`} className="border p-3 rounded-xl">
                 <div className="text-sm font-semibold">Week of {card.week}</div>
                 <div className="text-sm text-slate-300 mt-1">{card.summary}</div>
@@ -931,118 +692,12 @@ function SharePage() {
   );
 }
 
+/* ---------- Main App ---------- */
 export default function App(){
+  // If route is /share/..., render the public Share page
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
-  return <SharePage />;
-}
-  function SharePage() {
-  const [{ url, key }] = React.useState(() => safeGetEnv());
-  const token = React.useMemo(() => {
-    if (typeof location === "undefined") return "";
-    const m = location.pathname.match(/\/share\/([^/?#]+)/);
-    return m ? m[1] : "";
-  }, []);
-  const sclient = React.useMemo(() => {
-    if (!url || !key || !token) return null;
-    return createClient(url, key, { global: { headers: { "x-invite-token": token } } });
-  }, [url, key, token]);
-
-  const [workouts, setWorkouts] = React.useState([]);
-  const [prs, setPrs] = React.useState([]);
-  const [cards, setCards] = React.useState([]);
-  const [msg, setMsg] = React.useState("Loading…");
-
-  React.useEffect(() => {
-    let alive = true;
-    async function load() {
-      if (!sclient) { setMsg("Missing config"); return; }
-      try {
-        const [w, p, c] = await Promise.all([
-          sclient.from("share_workouts").select("*"),
-          sclient.from("share_prs").select("*"),
-          sclient.from("share_weekly_cards").select("*"),
-        ]);
-        if (!alive) return;
-        if (w.error || p.error || c.error) {
-          setMsg((w.error?.message || p.error?.message || c.error?.message || "Load error"));
-          return;
-        }
-        setWorkouts(w.data || []);
-        setPrs(p.data || []);
-        setCards(c.data || []);
-        setMsg("");
-      } catch (e) {
-        if (!alive) return;
-        setMsg(String(e.message || e));
-      }
-    }
-    load();
-    return () => { alive = false; };
-  }, [sclient]);
-
-  return (
-    <div className="p-4 space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">🏁 Shared Plan</h1>
-        <div className="text-sm text-slate-400">{msg}</div>
-      </div>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Week-by-Week Workouts</h2>
-        {workouts.length === 0 ? <p className="text-sm">No workouts visible for this token.</p> : (
-          <ul className="grid md:grid-cols-2 gap-2">
-            {workouts.map((w, i) => (
-              <li key={`${w.week_index}-${w.day_index}-${i}`} className="border border-slate-800 rounded-xl p-3">
-                <div className="text-sm font-semibold">Week {w.week_index} • Day {w.day_index} {w.session_date ? `• ${w.session_date}` : ""}</div>
-                <div className="text-sm mt-1">{w.title}</div>
-                {Array.isArray(w.blocks) && w.blocks.length > 0 && (
-                  <ul className="text-xs mt-2 list-disc pl-5 space-y-1">
-                    {w.blocks.map((b, j) => <li key={j}>{b}</li>)}
-                  </ul>
-                )}
-                <div className="text-xs text-slate-400 mt-1">{w.focus} • {w.phase}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Personal Records</h2>
-        {prs.length === 0 ? <p className="text-sm">No PRs shared yet.</p> : (
-          <ul className="text-sm grid md:grid-cols-2 gap-2">
-            {prs.map((r, i) => (
-              <li key={i} className="border border-slate-800 rounded px-2 py-1 flex items-center justify-between">
-                <span>{r.exercise}</span>
-                <span className="font-mono">
-                  {r.is_time ? secondsToMMSS(r.value_num) : r.value}{r.unit ? ` ${r.unit}` : ""}
-                </span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Weekly Summaries</h2>
-        {cards.length === 0 ? <p className="text-sm">No summaries yet.</p> : (
-          <ul className="grid md:grid-cols-2 gap-2">
-            {cards.map((card, i) => (
-              <li key={`${card.week}-${i}`} className="border p-3 rounded-xl">
-                <div className="text-sm font-semibold">Week of {card.week}</div>
-                <div className="text-sm text-slate-300 mt-1">{card.summary}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
-  );
-}
-
-  if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
-  return <SharePage />;
-}
+    return <SharePage />;
+  }
 
   const [athlete,setAthlete]=React.useState(load("hyrox.athlete",{ name:"", division:"Open", goalType:"Race", raceDate:"" }));
   const [base,setBase]=React.useState(load("hyrox.base",{ run5k:"25:00", ski1k:"4:30", row1k:"4:00", sledPush50m:"3:00", sledPull50m:"2:50", burpeeBroad80m:"6:00", farmer200m:"3:00", lunges100m:"4:30", wallballs100:22, readiness:4 }));
@@ -1068,7 +723,9 @@ export default function App(){
     const { error } = await supa.from("workouts").upsert(rows, { onConflict:"user_id,week_index,day_index" });
     if(error) return alert("Error: "+error.message);
     alert("Week 1 plan saved to cloud.");
+    window.dispatchEvent(new Event("workouts:changed"));
   }
+
   const weekday=new Date().getDay(); const map=[6,0,1,2,3,4,5]; const idx=map[weekday]??0;
   const todays=plan[idx]||plan[0]||{ day:"Mon", session:{type:"Rest",blocks:["Walk 20′"]} };
   const [readiness,setReadiness]=React.useState(3);
@@ -1076,35 +733,33 @@ export default function App(){
   const adjusted=React.useMemo(()=>{ const s={...todays.session}; let blocks=s.blocks?[...s.blocks]:(s.notes?[s.notes]:[]); blocks=annotateBlocks(blocks,paces); const scale=(arr,mode)=>arr.map(line=>{ let out=line; if(mode==="easy"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Math.max(1,Math.round(Number(p1)*0.65))}×`).replace(/@ *[^;\n]+pace/g,"@ easy pace").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.round(Number(n)*1.3)}${String(u).toLowerCase().includes("min")?" min":"s"}`).replace(/EMOM *([0-9]+)[′']/i,(m,min)=>`EMOM ${Math.max(8,Math.round(Number(min)*0.85))}′`);} else if(mode==="hard"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Number(p1)+1}×`).replace(/@ *5k pace/g,"@ 5k pace − 5–8s/km").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.max(20,Math.round(Number(n)*0.85))}${String(u).toLowerCase().includes("min")?" min":"s"}`);} return out; }); if(readiness<=2){ s.type=`${s.type} (Easy)`; s.blocks=scale(blocks,"easy"); } else if(readiness>=4){ s.type=`${s.type} (Challenging)`; s.blocks=scale(blocks,"hard"); } else { s.blocks=scale(blocks,"normal"); } return s; },[todays,readiness,paces]);
 
   async function makeShareLink(){
-  if (!supa) return alert("Supabase not configured");
-  const { data: { user } } = await supa.auth.getUser();
-  if (!user) return alert("Please sign in first.");
+    if (!supa) return alert("Supabase not configured");
+    const { data: { user } } = await supa.auth.getUser();
+    if (!user) return alert("Please sign in first.");
 
-  // find active token
-  const { data: existing, error: selErr } = await supa
-    .from("public_shares")
-    .select("token")
-    .eq("user_id", user.id)
-    .eq("status", "active")
-    .maybeSingle();
-  if (selErr) return alert(selErr.message);
-
-  let token = existing?.token;
-  if (!token) {
-    const { data: created, error: insErr } = await supa
+    const { data: existing, error: selErr } = await supa
       .from("public_shares")
-      .insert({ user_id: user.id, status: "active" })
       .select("token")
-      .single();
-    if (insErr) return alert(insErr.message);
-    token = created.token;
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .maybeSingle();
+    if (selErr) return alert(selErr.message);
+
+    let token = existing?.token;
+    if (!token) {
+      const { data: created, error: insErr } = await supa
+        .from("public_shares")
+        .insert({ user_id: user.id, status: "active" })
+        .select("token")
+        .single();
+      if (insErr) return alert(insErr.message);
+      token = created.token;
+    }
+
+    const url = `${window.location.origin}/share/${token}`;
+    await navigator.clipboard.writeText(url);
+    alert("Share link copied!");
   }
-
-  const url = `${window.location.origin}/share/${token}`;
-  await navigator.clipboard.writeText(url);
-  alert("Share link copied!");
-}
-
 
   return (
     <>
@@ -1162,8 +817,6 @@ export default function App(){
         </Card>
 
         <TrainTodayCard user={user} />
-
-
         <ThisWeek user={user} />
 
         <Card title="Pro Features"><div className="muted">Coming soon: Race Sim+, export, multi-athlete with Stripe Checkout.</div></Card>
