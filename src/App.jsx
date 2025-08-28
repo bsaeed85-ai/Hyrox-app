@@ -889,3 +889,21 @@ export default function App(){
     </>
   );
 }
+function downloadCSV(filename, rows) {
+  const headers = Object.keys(rows[0] || {day:"", title:"", blocks:"", focus:"", phase:""});
+  const csv = [
+    headers.join(","),
+    ...rows.map(r => headers.map(h => {
+      const v = r[h];
+      const s = typeof v === "string" ? v : Array.isArray(v) ? v.join(" | ") : (v ?? "");
+      // escape CSV
+      const needsQuote = /[",\n]/.test(s);
+      return needsQuote ? `"${s.replace(/"/g,'""')}"` : s;
+    }).join(","))
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
