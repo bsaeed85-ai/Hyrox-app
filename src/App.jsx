@@ -693,7 +693,9 @@ function SharePage() {
 }
 
 /* ---------- Main App ---------- */
-export default function App(){
+export default function App(){<AuthBar/>
+<ShareAdminCard user={user} />
+
   // If route is /share/..., render the public Share page
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
     return <SharePage />;
