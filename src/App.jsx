@@ -588,7 +588,7 @@ function HistoryPage({ user }) {
   );
 }
 
-/* ---------- Share Page (top-level) ---------- */
+/* ---------- Share Page (public) ---------- */
 function SharePage() {
   const [{ url, key }] = React.useState(() => safeGetEnv());
   const token = React.useMemo(() => {
@@ -692,15 +692,7 @@ function SharePage() {
   );
 }
 
-/* ---------- Main App ---------- */
-export default function App(){<AuthBar/>
-<ShareAdminCard user={user} />
-
-  // If route is /share/..., render the public Share page
-  if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
-    return <SharePage />;
-  }
-/* ---------- Share Admin ---------- */
+/* ---------- Share Admin (private) ---------- */
 function ShareAdminCard({ user }) {
   if (!supa) return <Card title="Sharing"><div className="muted">Supabase not configured.</div></Card>;
   const [loading, setLoading] = React.useState(false);
@@ -728,13 +720,24 @@ function ShareAdminCard({ user }) {
 
   async function copyLink() {
     if (!user) return alert("Sign in first.");
-    if (!token || status !== "active") {
-      // create a new active token if none active
-      const { data, error } = await supa.from("public_shares").insert({ user_id: user.id, status: "active" }).select("token,status").single();
+
+    let tok = token;
+    let st = status;
+
+    if (!tok || st !== "active") {
+      const { data, error } = await supa
+        .from("public_shares")
+        .insert({ user_id: user.id, status: "active" })
+        .select("token,status")
+        .single();
       if (error) return alert(error.message);
-      setToken(data.token); setStatus(data.status);
+      tok = data.token;
+      st = data.status;
+      setToken(data.token);
+      setStatus(data.status);
     }
-    const url = `${window.location.origin}/share/${token}`;
+
+    const url = `${window.location.origin}/share/${tok}`;
     await navigator.clipboard.writeText(url);
     setMsg("Share link copied.");
   }
@@ -752,9 +755,7 @@ function ShareAdminCard({ user }) {
   async function regenerate() {
     if (!user) return alert("Sign in first.");
     setLoading(true); setMsg("");
-    // revoke any current active
     await supa.from("public_shares").update({ status: "revoked" }).eq("user_id", user.id).eq("status","active");
-    // create a fresh active token
     const { data, error } = await supa.from("public_shares").insert({ user_id: user.id, status:"active" }).select("token,status").single();
     if (error) { setMsg(error.message); setLoading(false); return; }
     setToken(data.token); setStatus(data.status);
@@ -781,6 +782,13 @@ function ShareAdminCard({ user }) {
     </Card>
   );
 }
+
+/* ---------- Main App ---------- */
+export default function App(){
+  // Public share route: render and bail out before any private hooks
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
+    return <SharePage />;
+  }
 
   const [athlete,setAthlete]=React.useState(load("hyrox.athlete",{ name:"", division:"Open", goalType:"Race", raceDate:"" }));
   const [base,setBase]=React.useState(load("hyrox.base",{ run5k:"25:00", ski1k:"4:30", row1k:"4:00", sledPush50m:"3:00", sledPull50m:"2:50", burpeeBroad80m:"6:00", farmer200m:"3:00", lunges100m:"4:30", wallballs100:22, readiness:4 }));
@@ -813,36 +821,9 @@ function ShareAdminCard({ user }) {
   const todays=plan[idx]||plan[0]||{ day:"Mon", session:{type:"Rest",blocks:["Walk 20′"]} };
   const [readiness,setReadiness]=React.useState(3);
   const paces=React.useMemo(()=>({ run5k:pacePerKmFrom5k(base.run5k||"25:00"), goalRun:analysis.splits.run8k/8, ski500:ergPace500From1k(base.ski1k||"4:30"), row500:ergPace500From1k(base.row1k||"4:00"), row2k500:ergPace500From1k(base.row1k||"4:00")+2 }),[base.run5k,base.ski1k,base.row1k,analysis.splits.run8k]);
+
+  // Note: 'adjusted' is computed but not rendered in this UI; keep for future tweak or remove if unused.
   const adjusted=React.useMemo(()=>{ const s={...todays.session}; let blocks=s.blocks?[...s.blocks]:(s.notes?[s.notes]:[]); blocks=annotateBlocks(blocks,paces); const scale=(arr,mode)=>arr.map(line=>{ let out=line; if(mode==="easy"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Math.max(1,Math.round(Number(p1)*0.65))}×`).replace(/@ *[^;\n]+pace/g,"@ easy pace").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.round(Number(n)*1.3)}${String(u).toLowerCase().includes("min")?" min":"s"}`).replace(/EMOM *([0-9]+)[′']/i,(m,min)=>`EMOM ${Math.max(8,Math.round(Number(min)*0.85))}′`);} else if(mode==="hard"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Number(p1)+1}×`).replace(/@ *5k pace/g,"@ 5k pace − 5–8s/km").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.max(20,Math.round(Number(n)*0.85))}${String(u).toLowerCase().includes("min")?" min":"s"}`);} return out; }); if(readiness<=2){ s.type=`${s.type} (Easy)`; s.blocks=scale(blocks,"easy"); } else if(readiness>=4){ s.type=`${s.type} (Challenging)`; s.blocks=scale(blocks,"hard"); } else { s.blocks=scale(blocks,"normal"); } return s; },[todays,readiness,paces]);
-
-  async function makeShareLink(){
-    if (!supa) return alert("Supabase not configured");
-    const { data: { user } } = await supa.auth.getUser();
-    if (!user) return alert("Please sign in first.");
-
-    const { data: existing, error: selErr } = await supa
-      .from("public_shares")
-      .select("token")
-      .eq("user_id", user.id)
-      .eq("status", "active")
-      .maybeSingle();
-    if (selErr) return alert(selErr.message);
-
-    let token = existing?.token;
-    if (!token) {
-      const { data: created, error: insErr } = await supa
-        .from("public_shares")
-        .insert({ user_id: user.id, status: "active" })
-        .select("token")
-        .single();
-      if (insErr) return alert(insErr.message);
-      token = created.token;
-    }
-
-    const url = `${window.location.origin}/share/${token}`;
-    await navigator.clipboard.writeText(url);
-    alert("Share link copied!");
-  }
 
   return (
     <>
@@ -855,6 +836,7 @@ function ShareAdminCard({ user }) {
       <main className="wrap">
         <h1>Dashboard</h1>
         <AuthBar/>
+        <ShareAdminCard user={user} />
 
         <Card title="Athlete">
           <div className="row">
@@ -867,7 +849,7 @@ function ShareAdminCard({ user }) {
 
         <ProfileCard user={user} profile={profile} setProfile={setProfile} />
 
-        <Card title="Baseline (quick)" right={<div className="row"><button className="btn" onClick={generateWeek1ToCloud}>Generate Week 1 plan → Cloud</button><button onClick={makeShareLink}>Share plan</button></div>}>
+        <Card title="Baseline (quick)" right={<div className="row"><button className="btn" onClick={generateWeek1ToCloud}>Generate Week 1 plan → Cloud</button></div>}>
           <div className="row" style={{flexWrap:"wrap"}}>
             {[
               ["run5k","5k run (mm:ss)"],["ski1k","SkiErg 1k"],["row1k","Row 1k"],
@@ -905,27 +887,5 @@ function ShareAdminCard({ user }) {
         <Card title="Pro Features"><div className="muted">Coming soon: Race Sim+, export, multi-athlete with Stripe Checkout.</div></Card>
       </main>
     </>
-    async function copyLink() {
-  if (!user) return alert("Sign in first.");
-
-  let tok = token;
-
-  if (!tok || status !== "active") {
-    const { data, error } = await supa
-      .from("public_shares")
-      .insert({ user_id: user.id, status: "active" })
-      .select("token,status")
-      .single();
-    if (error) return alert(error.message);
-    tok = data.token;                    // <-- use the new token immediately
-    setToken(data.token);
-    setStatus(data.status);
-  }
-
-  const url = `${window.location.origin}/share/${tok}`; // <-- use 'tok'
-  await navigator.clipboard.writeText(url);
-  setMsg("Share link copied.");
-}
-
   );
 }
