@@ -822,6 +822,114 @@ function HistoryPage({ user }) {
     </section>
   );
 }
+function SharePage() {
+  const [{ url, key }] = React.useState(() => safeGetEnv());
+
+  // token from /share/:token
+  const token = React.useMemo(() => {
+    if (typeof location === "undefined") return "";
+    const m = location.pathname.match(/\/share\/([^/?#]+)/);
+    return m ? m[1] : "";
+  }, []);
+
+  // client that sends token as header for RLS policies
+  const sclient = React.useMemo(() => {
+    if (!url || !key || !token) return null;
+    return createClient(url, key, { global: { headers: { "x-invite-token": token } } });
+  }, [url, key, token]);
+
+  const [workouts, setWorkouts] = React.useState([]);
+  const [prs, setPrs] = React.useState([]);
+  const [cards, setCards] = React.useState([]);
+  const [msg, setMsg] = React.useState("Loading…");
+
+  React.useEffect(() => {
+    let alive = true;
+    async function load() {
+      if (!sclient) { setMsg("Missing config"); return; }
+      try {
+        const [w, p, c] = await Promise.all([
+          sclient.from("share_workouts").select("*"),
+          sclient.from("share_prs").select("*"),
+          sclient.from("share_weekly_cards").select("*"),
+        ]);
+        if (!alive) return;
+        if (w.error || p.error || c.error) {
+          setMsg(w.error?.message || p.error?.message || c.error?.message || "Load error");
+          return;
+        }
+        setWorkouts(w.data || []);
+        setPrs(p.data || []);
+        setCards(c.data || []);
+        setMsg("");
+      } catch (e) {
+        if (!alive) return;
+        setMsg(String(e.message || e));
+      }
+    }
+    load();
+    return () => { alive = false; };
+  }, [sclient]);
+
+  return (
+    <div className="p-4 space-y-8">
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold">🏁 Shared Plan</h1>
+        <div className="text-sm text-slate-400">{msg}</div>
+      </div>
+
+      <section>
+        <h2 className="text-lg font-semibold mb-2">Week-by-Week Workouts</h2>
+        {workouts.length === 0 ? <p className="text-sm">No workouts visible for this token.</p> : (
+          <ul className="grid md:grid-cols-2 gap-2">
+            {workouts.map((w, i) => (
+              <li key={`${w.week_index}-${w.day_index}-${i}`} className="border border-slate-800 rounded-xl p-3">
+                <div className="text-sm font-semibold">Week {w.week_index} • Day {w.day_index} {w.session_date ? `• ${w.session_date}` : ""}</div>
+                <div className="text-sm mt-1">{w.title}</div>
+                {Array.isArray(w.blocks) && w.blocks.length > 0 && (
+                  <ul className="text-xs mt-2 list-disc pl-5 space-y-1">
+                    {w.blocks.map((b, j) => <li key={j}>{b}</li>)}
+                  </ul>
+                )}
+                <div className="text-xs text-slate-400 mt-1">{w.focus} • {w.phase}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold mb-2">Personal Records</h2>
+        {prs.length === 0 ? <p className="text-sm">No PRs shared yet.</p> : (
+          <ul className="text-sm grid md:grid-cols-2 gap-2">
+            {prs.map((r, i) => (
+              <li key={i} className="border border-slate-800 rounded px-2 py-1 flex items-center justify-between">
+                <span>{r.exercise}</span>
+                <span className="font-mono">
+                  {r.is_time ? secondsToMMSS(r.value_num) : r.value}{r.unit ? ` ${r.unit}` : ""}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section>
+        <h2 className="text-lg font-semibold mb-2">Weekly Summaries</h2>
+        {cards.length === 0 ? <p className="text-sm">No summaries yet.</p> : (
+          <ul className="grid md:grid-cols-2 gap-2">
+            {cards.map((card, i) => (
+              <li key={`${card.week}-${i}`} className="border p-3 rounded-xl">
+                <div className="text-sm font-semibold">Week of {card.week}</div>
+                <div className="text-sm text-slate-300 mt-1">{card.summary}</div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  );
+}
 
 export default function App(){
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
