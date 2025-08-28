@@ -935,3 +935,10 @@ async function generateWeeksToCloud(nWeeks = 4, startWeek = 1) {
   alert(`${nWeeks} week(s) saved to cloud starting at week ${startWeek}.`);
   window.dispatchEvent(new Event("workouts:changed"));
 }
+async function clearCloudWeek(weekIndex = 1) {
+  if (!supa || !user) return alert("Sign in first.");
+  const { error } = await supa.from("workouts").delete().eq("user_id", user.id).eq("week_index", weekIndex);
+  if (error) return alert("Error: " + error.message);
+  alert(`Week ${weekIndex} cleared.`);
+  window.dispatchEvent(new Event("workouts:changed"));
+}
