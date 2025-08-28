@@ -29,7 +29,6 @@ function safeGetEnv() {
     "";
   return { url, key };
 }
-<HistoryPage user={user} />
 
 function estimateMinutesFromBlocks(blocks) {
   if (!Array.isArray(blocks)) return 0;
