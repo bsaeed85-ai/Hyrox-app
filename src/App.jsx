@@ -905,5 +905,27 @@ function ShareAdminCard({ user }) {
         <Card title="Pro Features"><div className="muted">Coming soon: Race Sim+, export, multi-athlete with Stripe Checkout.</div></Card>
       </main>
     </>
+    async function copyLink() {
+  if (!user) return alert("Sign in first.");
+
+  let tok = token;
+
+  if (!tok || status !== "active") {
+    const { data, error } = await supa
+      .from("public_shares")
+      .insert({ user_id: user.id, status: "active" })
+      .select("token,status")
+      .single();
+    if (error) return alert(error.message);
+    tok = data.token;                    // <-- use the new token immediately
+    setToken(data.token);
+    setStatus(data.status);
+  }
+
+  const url = `${window.location.origin}/share/${tok}`; // <-- use 'tok'
+  await navigator.clipboard.writeText(url);
+  setMsg("Share link copied.");
+}
+
   );
 }
