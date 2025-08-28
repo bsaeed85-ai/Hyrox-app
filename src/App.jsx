@@ -698,6 +698,87 @@ export default function App(){
   if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
     return <SharePage />;
   }
+/* ---------- Share Admin ---------- */
+function ShareAdminCard({ user }) {
+  if (!supa) return <Card title="Sharing"><div className="muted">Supabase not configured.</div></Card>;
+  const [loading, setLoading] = React.useState(false);
+  const [token, setToken] = React.useState("");
+  const [status, setStatus] = React.useState("");
+  const [msg, setMsg] = React.useState("");
+
+  async function refresh() {
+    if (!user) { setToken(""); setStatus(""); return; }
+    setLoading(true); setMsg("");
+    const { data, error } = await supa
+      .from("public_shares")
+      .select("token, status, created_at")
+      .eq("user_id", user.id)
+      .order("created_at", { ascending: false })
+      .limit(1);
+    if (error) setMsg(error.message);
+    const row = data?.[0];
+    setToken(row?.token || "");
+    setStatus(row?.status || "");
+    setLoading(false);
+  }
+
+  React.useEffect(()=>{ refresh(); }, [user?.id]);
+
+  async function copyLink() {
+    if (!user) return alert("Sign in first.");
+    if (!token || status !== "active") {
+      // create a new active token if none active
+      const { data, error } = await supa.from("public_shares").insert({ user_id: user.id, status: "active" }).select("token,status").single();
+      if (error) return alert(error.message);
+      setToken(data.token); setStatus(data.status);
+    }
+    const url = `${window.location.origin}/share/${token}`;
+    await navigator.clipboard.writeText(url);
+    setMsg("Share link copied.");
+  }
+
+  async function revoke() {
+    if (!user) return alert("Sign in first.");
+    setLoading(true); setMsg("");
+    const { error } = await supa.from("public_shares").update({ status: "revoked" }).eq("user_id", user.id).eq("status", "active");
+    if (error) { setMsg(error.message); setLoading(false); return; }
+    setStatus("revoked");
+    setMsg("Share revoked.");
+    setLoading(false);
+  }
+
+  async function regenerate() {
+    if (!user) return alert("Sign in first.");
+    setLoading(true); setMsg("");
+    // revoke any current active
+    await supa.from("public_shares").update({ status: "revoked" }).eq("user_id", user.id).eq("status","active");
+    // create a fresh active token
+    const { data, error } = await supa.from("public_shares").insert({ user_id: user.id, status:"active" }).select("token,status").single();
+    if (error) { setMsg(error.message); setLoading(false); return; }
+    setToken(data.token); setStatus(data.status);
+    setMsg("New link created.");
+    setLoading(false);
+  }
+
+  const link = token && status === "active" ? `${window.location.origin}/share/${token}` : "";
+
+  return (
+    <Card title="Sharing" right={<button onClick={refresh} disabled={loading}>{loading ? "…" : "Refresh"}</button>}>
+      <div className="muted" style={{marginBottom:8}}>
+        {status ? `Status: ${status}` : "No link yet"} {link ? "• visible to anyone with the link" : ""}
+      </div>
+      <div className="row" style={{gap:8, flexWrap:"wrap"}}>
+        <button className="btn" onClick={copyLink} disabled={loading}>
+          {link ? "Copy link" : "Create & copy link"}
+        </button>
+        <button onClick={regenerate} disabled={loading}>Regenerate link</button>
+        <button onClick={revoke} disabled={loading || status !== "active"}>Revoke</button>
+        {link ? <input readOnly value={link} style={{minWidth:260}}/> : null}
+      </div>
+      {msg && <div className="muted" style={{marginTop:8}}>{msg}</div>}
+    </Card>
+  );
+}
 
   const [athlete,setAthlete]=React.useState(load("hyrox.athlete",{ name:"", division:"Open", goalType:"Race", raceDate:"" }));
   const [base,setBase]=React.useState(load("hyrox.base",{ run5k:"25:00", ski1k:"4:30", row1k:"4:00", sledPush50m:"3:00", sledPull50m:"2:50", burpeeBroad80m:"6:00", farmer200m:"3:00", lunges100m:"4:30", wallballs100:22, readiness:4 }));
