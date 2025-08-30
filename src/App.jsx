@@ -1,5 +1,7 @@
 import React from "react";
 import { createClient } from "@supabase/supabase-js";
+import "./styles.css";
+
 
 /* ---------- Supabase (global client) ---------- */
 const supa = (() => {
