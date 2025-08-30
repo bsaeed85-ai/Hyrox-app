@@ -49,6 +49,23 @@ function weekKeyOf(d) {
   const dd = String(dt.getDate()).padStart(2, "0");
   return `${y}-${m}-${dd}`;
 }
+function downloadCSV(filename, rows) {
+  const headers = Object.keys(rows[0] || {day:"", title:"", blocks:"", focus:"", phase:""});
+  const csv = [
+    headers.join(","),
+    ...rows.map(r => headers.map(h => {
+      const v = r[h];
+      const s = typeof v === "string" ? v : Array.isArray(v) ? v.join(" | ") : (v ?? "");
+      const needsQuote = /[",\n]/.test(s);
+      return needsQuote ? `"${s.replace(/"/g,'""')}"` : s;
+    }).join(","))
+  ].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
 
 /* ---------- race twin ---------- */
 function estimateRaceFromBaseline(b){
@@ -154,7 +171,17 @@ function makeWeekPlan(athlete, analysis){
 }
 
 /* ---------- UI primitives ---------- */
-function Card({ title, children, right }){ return(<div className="card"><div className="row" style={{justifyContent:"space-between",marginBottom:8}}><h2 style={{margin:0}}>{title}</h2>{right}</div>{children}</div>); }
+function Card({ title, children, right }) {
+  return (
+    <div className="card">
+      <div className="row" style={{justifyContent:"space-between",marginBottom:8}}>
+        <h2 style={{margin:0}}>{title}</h2>
+        {right}
+      </div>
+      {children}
+    </div>
+  );
+}
 
 /* ---------- Auth bar ---------- */
 function AuthBar(){
@@ -164,7 +191,29 @@ function AuthBar(){
   async function sendLink(){ setStatus("Sending…"); const {error}=await supa.auth.signInWithOtp({email,options:{emailRedirectTo:window.location.origin+window.location.pathname}}); setStatus(error?`Error: ${error.message}`:"Check your email for the link or 6-digit code."); }
   async function verify(){ setStatus("Verifying…"); const {error}=await supa.auth.verifyOtp({type:"email",email,token:code}); setStatus(error?`Error: ${error.message}`:"Signed in."); }
   async function signOut(){ await supa.auth.signOut(); setUser(null); }
-  return (<div className="card"><div className="row" style={{justifyContent:"space-between"}}><div><div style={{fontWeight:600,marginBottom:6}}>Account</div><div className="muted">{user?`Signed in as ${user.email||user.id}`:"Not signed in"}</div></div><div className="row">{!user?(<><input placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)}/><button className="btn" onClick={sendLink}>Send magic link</button><input placeholder="123456" value={code} onChange={e=>setCode(e.target.value)} style={{width:100}}/><button onClick={verify}>Verify code</button></>):(<button onClick={signOut}>Sign out</button>)}</div></div>{status&&<div className="muted" style={{marginTop:8}}>{status}</div>}</div>);
+  return (
+    <div className="card">
+      <div className="row" style={{justifyContent:"space-between"}}>
+        <div>
+          <div style={{fontWeight:600,marginBottom:6}}>Account</div>
+          <div className="muted">{user?`Signed in as ${user.email||user.id}`:"Not signed in"}</div>
+        </div>
+        <div className="row">
+          {!user?(
+            <>
+              <input placeholder="you@email.com" value={email} onChange={e=>setEmail(e.target.value)}/>
+              <button className="btn" onClick={sendLink}>Send magic link</button>
+              <input placeholder="123456" value={code} onChange={e=>setCode(e.target.value)} style={{width:100}}/>
+              <button onClick={verify}>Verify code</button>
+            </>
+          ):(
+            <button onClick={signOut}>Sign out</button>
+          )}
+        </div>
+      </div>
+      {status&&<div className="muted" style={{marginTop:8}}>{status}</div>}
+    </div>
+  );
 }
 
 /* ---------- Guided Baseline ---------- */
@@ -175,7 +224,28 @@ function GuidedBaseline({ base, setBase }){
   React.useEffect(()=>{ if(!running) return; const id=setInterval(()=>setSecElapsed(s=>s+1),1000); return()=>clearInterval(id); },[running]);
   const atEnd=idx>=tests.length; const curr=tests[idx]||null;
   function saveTime(){ const mmss=secondsToMMSS(secElapsed); const k=tests[idx][0]; setBase({...base,[k]:mmss}); }
-  return(<Card title="Guided Baseline"><div className="muted" style={{marginBottom:8}}>Use the stopwatch to time each test. Click Save after each, then Next.</div>{!atEnd?(<><div style={{fontWeight:600,marginBottom:6}}>{curr[1]}</div><Stopwatch running={running} onToggle={()=>setRunning(r=>!r)} onReset={()=>{setRunning(false);setSecElapsed(0);}} seconds={secElapsed}/><div className="row" style={{marginTop:8}}><button className="btn" onClick={saveTime}>Save time</button><button className="btn" onClick={()=>{setIdx(i=>i+1); setRunning(false); setSecElapsed(0);}}>Next</button><button onClick={()=>setIdx(tests.length)}>Skip to summary</button></div><div className="muted" style={{marginTop:8}}>Saved: {tests.map(t=>base[t[0]]?t[1]:null).filter(Boolean).join(", ")||"None"}</div></>):(<><div style={{fontWeight:600,marginBottom:6}}>Summary</div><ul style={{margin:0,paddingLeft:16}}>{tests.map(t=><li key={t[0]}>{t[1]}: {base[t[0]]||"--:--"}</li>)}</ul></>)}</Card>);
+  return(
+    <Card title="Guided Baseline">
+      <div className="muted" style={{marginBottom:8}}>Use the stopwatch to time each test. Click Save after each, then Next.</div>
+      {!atEnd?(
+        <>
+          <div style={{fontWeight:600,marginBottom:6}}>{curr[1]}</div>
+          <Stopwatch running={running} onToggle={()=>setRunning(r=>!r)} onReset={()=>{setRunning(false);setSecElapsed(0);}} seconds={secElapsed}/>
+          <div className="row" style={{marginTop:8}}>
+            <button className="btn" onClick={saveTime}>Save time</button>
+            <button className="btn" onClick={()=>{setIdx(i=>i+1); setRunning(false); setSecElapsed(0);}}>Next</button>
+            <button onClick={()=>setIdx(tests.length)}>Skip to summary</button>
+          </div>
+          <div className="muted" style={{marginTop:8}}>Saved: {tests.map(t=>base[t[0]]?t[1]:null).filter(Boolean).join(", ")||"None"}</div>
+        </>
+      ):(
+        <>
+          <div style={{fontWeight:600,marginBottom:6}}>Summary</div>
+          <ul style={{margin:0,paddingLeft:16}}>{tests.map(t=><li key={t[0]}>{t[1]}: {base[t[0]]||"--:--"}</li>)}</ul>
+        </>
+      )}
+    </Card>
+  );
 }
 
 /* ---------- Profile card ---------- */
@@ -187,7 +257,6 @@ function ProfileCard({ user, profile, setProfile }) {
     if (error) return alert("Error: " + error.message);
     alert("Profile saved.");
   }
-
   async function loadCloud() {
     if (!supa || !user) return alert("Sign in first.");
     const { data, error } = await supa.from("profiles").select("*").eq("id", user.id).maybeSingle();
@@ -196,12 +265,8 @@ function ProfileCard({ user, profile, setProfile }) {
     setProfile({ experience: data.experience || "beginner", goal: data.goal || "balanced" });
     alert("Profile loaded from cloud.");
   }
-
   return (
-    <Card
-      title="Profile"
-      right={<div className="row"><button onClick={saveCloud}>Save to cloud</button><button onClick={loadCloud}>Load from cloud</button></div>}
-    >
+    <Card title="Profile" right={<div className="row"><button onClick={saveCloud}>Save to cloud</button><button onClick={loadCloud}>Load from cloud</button></div>}>
       <div className="row" style={{ gap: 12, flexWrap: "wrap" }}>
         <label className="row" style={{ gap: 6 }}>
           <span className="muted">Experience</span>
@@ -419,9 +484,7 @@ function TrainTodayCard({ user }) {
     }
   }
 
-  function blocksTextarea(value) {
-    setBlocks(String(value).split("\n").map((s)=>s.trim()).filter(Boolean));
-  }
+  function blocksTextarea(value) { setBlocks(String(value).split("\n").map((s)=>s.trim()).filter(Boolean)); }
 
   async function save() {
     setMsg("");
@@ -435,12 +498,8 @@ function TrainTodayCard({ user }) {
       notes: notes || null,
     };
     let res;
-    if (sessionId) {
-      res = await supaLocal.from("sessions").update(payload).eq("id", sessionId).select().single();
-    } else {
-      res = await supaLocal.from("sessions").insert(payload).select().single();
-      if (!res.error) setSessionId(res.data.id);
-    }
+    if (sessionId) res = await supaLocal.from("sessions").update(payload).eq("id", sessionId).select().single();
+    else { res = await supaLocal.from("sessions").insert(payload).select().single(); if (!res.error) setSessionId(res.data.id); }
     if (res.error) { setMsg(res.error.message); return; }
     setMsg("Saved.");
   }
@@ -460,11 +519,11 @@ function TrainTodayCard({ user }) {
           <div className="space-y-3">
             <div>
               <label className="text-xs block mb-1">Title</label>
-              <input className="border rounded px-2 py-1 w-full bg-slate-950" placeholder="e.g., Run Threshold 3x6" value={title} onChange={(e)=>setTitle(e.target.value)} />
+              <input className="border rounded px-2 py-1 w-full bg-slate-950" placeholder="e.g., Run Threshold 3x10" value={title} onChange={(e)=>setTitle(e.target.value)} />
             </div>
             <div>
               <label className="text-xs block mb-1">Blocks <span className="text-slate-400">(one per line) • ~{estMins}′</span></label>
-              <textarea className="border rounded px-2 py-1 w-full bg-slate-950 min-h-[96px]" placeholder={"Warm-up 10′\n3 x 6′ steady; 2′ easy\nCooldown 10′"} value={blocks.join("\n")} onChange={(e)=>blocksTextarea(e.target.value)} />
+              <textarea className="border rounded px-2 py-1 w-full bg-slate-950 min-h-[96px]" placeholder={"Warm-up 10′\n3 x 10′ @ 5k pace; 2′ easy\nCooldown 10′"} value={blocks.join("\n")} onChange={(e)=>blocksTextarea(e.target.value)} />
             </div>
             <div className="flex items-center gap-4">
               <label className="flex items-center gap-2 text-sm">
@@ -492,7 +551,7 @@ function TrainTodayCard({ user }) {
   );
 }
 
-/* ---------- History (not routed, but ready to use) ---------- */
+/* ---------- History (optional section) ---------- */
 function groupByWeek(rows) {
   const by = {};
   for (const r of rows) {
@@ -588,208 +647,8 @@ function HistoryPage({ user }) {
   );
 }
 
-/* ---------- Share Page (public) ---------- */
-function SharePage() {
-  const [{ url, key }] = React.useState(() => safeGetEnv());
-  const token = React.useMemo(() => {
-    if (typeof location === "undefined") return "";
-    const m = location.pathname.match(/\/share\/([^/?#]+)/);
-    return m ? m[1] : "";
-  }, []);
-  const sclient = React.useMemo(() => {
-    if (!url || !key || !token) return null;
-    return createClient(url, key, { global: { headers: { "x-invite-token": token } } });
-  }, [url, key, token]);
-
-  const [workouts, setWorkouts] = React.useState([]);
-  const [prs, setPrs] = React.useState([]);
-  const [cards, setCards] = React.useState([]);
-  const [msg, setMsg] = React.useState("Loading…");
-
-  React.useEffect(() => {
-    let alive = true;
-    async function load() {
-      if (!sclient) { setMsg("Missing config"); return; }
-      try {
-        const [w, p, c] = await Promise.all([
-          sclient.from("share_workouts").select("*"),
-          sclient.from("share_prs").select("*"),
-          sclient.from("share_weekly_cards").select("*"),
-        ]);
-        if (!alive) return;
-        if (w.error || p.error || c.error) {
-          setMsg(w.error?.message || p.error?.message || c.error?.message || "Load error");
-          return;
-        }
-        setWorkouts(w.data || []);
-        setPrs(p.data || []);
-        setCards(c.data || []);
-        setMsg("");
-      } catch (e) {
-        if (!alive) return;
-        setMsg(String(e.message || e));
-      }
-    }
-    load();
-    return () => { alive = false; };
-  }, [sclient]);
-
-  return (
-    <div className="p-4 space-y-8">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold">🏁 Shared Plan</h1>
-        <div className="text-sm text-slate-400">{msg}</div>
-      </div>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Week-by-Week Workouts</h2>
-        {workouts.length===0 ? <p className="text-sm">No workouts visible for this token.</p> : (
-          <ul className="grid md:grid-cols-2 gap-2">
-            {workouts.map((w,i)=>(
-              <li key={`${w.week_index}-${w.day_index}-${i}`} className="border border-slate-800 rounded-xl p-3">
-                <div className="text-sm font-semibold">Week {w.week_index} • Day {w.day_index} {w.session_date ? `• ${w.session_date}` : ""}</div>
-                <div className="text-sm mt-1">{w.title}</div>
-                {Array.isArray(w.blocks) && w.blocks.length>0 && (
-                  <ul className="text-xs mt-2 list-disc pl-5 space-y-1">
-                    {w.blocks.map((b,j)=>(<li key={j}>{b}</li>))}
-                  </ul>
-                )}
-                <div className="text-xs text-slate-400 mt-1">{w.focus} • {w.phase}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Personal Records</h2>
-        {prs.length===0 ? <p className="text-sm">No PRs shared yet.</p> : (
-          <ul className="text-sm grid md:grid-cols-2 gap-2">
-            {prs.map((r,i)=>(
-              <li key={i} className="border border-slate-800 rounded px-2 py-1 flex items-center justify-between">
-                <span>{r.exercise}</span>
-                <span className="font-mono">{r.is_time ? secondsToMMSS(r.value_num) : r.value}{r.unit ? ` ${r.unit}` : ""}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-
-      <section>
-        <h2 className="text-lg font-semibold mb-2">Weekly Summaries</h2>
-        {cards.length===0 ? <p className="text-sm">No summaries yet.</p> : (
-          <ul className="grid md:grid-cols-2 gap-2">
-            {cards.map((card,i)=>(
-              <li key={`${card.week}-${i}`} className="border p-3 rounded-xl">
-                <div className="text-sm font-semibold">Week of {card.week}</div>
-                <div className="text-sm text-slate-300 mt-1">{card.summary}</div>
-              </li>
-            ))}
-          </ul>
-        )}
-      </section>
-    </div>
-  );
-}
-
-/* ---------- Share Admin (private) ---------- */
-function ShareAdminCard({ user }) {
-  if (!supa) return <Card title="Sharing"><div className="muted">Supabase not configured.</div></Card>;
-  const [loading, setLoading] = React.useState(false);
-  const [token, setToken] = React.useState("");
-  const [status, setStatus] = React.useState("");
-  const [msg, setMsg] = React.useState("");
-
-  async function refresh() {
-    if (!user) { setToken(""); setStatus(""); return; }
-    setLoading(true); setMsg("");
-    const { data, error } = await supa
-      .from("public_shares")
-      .select("token, status, created_at")
-      .eq("user_id", user.id)
-      .order("created_at", { ascending: false })
-      .limit(1);
-    if (error) setMsg(error.message);
-    const row = data?.[0];
-    setToken(row?.token || "");
-    setStatus(row?.status || "");
-    setLoading(false);
-  }
-
-  React.useEffect(()=>{ refresh(); }, [user?.id]);
-
-  async function copyLink() {
-    if (!user) return alert("Sign in first.");
-
-    let tok = token;
-    let st = status;
-
-    if (!tok || st !== "active") {
-      const { data, error } = await supa
-        .from("public_shares")
-        .insert({ user_id: user.id, status: "active" })
-        .select("token,status")
-        .single();
-      if (error) return alert(error.message);
-      tok = data.token;
-      st = data.status;
-      setToken(data.token);
-      setStatus(data.status);
-    }
-
-    const url = `${window.location.origin}/share/${tok}`;
-    await navigator.clipboard.writeText(url);
-    setMsg("Share link copied.");
-  }
-
-  async function revoke() {
-    if (!user) return alert("Sign in first.");
-    setLoading(true); setMsg("");
-    const { error } = await supa.from("public_shares").update({ status: "revoked" }).eq("user_id", user.id).eq("status", "active");
-    if (error) { setMsg(error.message); setLoading(false); return; }
-    setStatus("revoked");
-    setMsg("Share revoked.");
-    setLoading(false);
-  }
-
-  async function regenerate() {
-    if (!user) return alert("Sign in first.");
-    setLoading(true); setMsg("");
-    await supa.from("public_shares").update({ status: "revoked" }).eq("user_id", user.id).eq("status","active");
-    const { data, error } = await supa.from("public_shares").insert({ user_id: user.id, status:"active" }).select("token,status").single();
-    if (error) { setMsg(error.message); setLoading(false); return; }
-    setToken(data.token); setStatus(data.status);
-    setMsg("New link created.");
-    setLoading(false);
-  }
-
-  const link = token && status === "active" ? `${window.location.origin}/share/${token}` : "";
-
-  return (
-    <Card title="Sharing" right={<button onClick={refresh} disabled={loading}>{loading ? "…" : "Refresh"}</button>}>
-      <div className="muted" style={{marginBottom:8}}>
-        {status ? `Status: ${status}` : "No link yet"} {link ? "• visible to anyone with the link" : ""}
-      </div>
-      <div className="row" style={{gap:8, flexWrap:"wrap"}}>
-        <button className="btn" onClick={copyLink} disabled={loading}>
-          {link ? "Copy link" : "Create & copy link"}
-        </button>
-        <button onClick={regenerate} disabled={loading}>Regenerate link</button>
-        <button onClick={revoke} disabled={loading || status !== "active"}>Revoke</button>
-        {link ? <input readOnly value={link} style={{minWidth:260}}/> : null}
-      </div>
-      {msg && <div className="muted" style={{marginTop:8}}>{msg}</div>}
-    </Card>
-  );
-}
-
 /* ---------- Main App ---------- */
 export default function App(){
-  // Public share route: render and bail out before any private hooks
-  if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
-    return <SharePage />;
-  }
-
   const [athlete,setAthlete]=React.useState(load("hyrox.athlete",{ name:"", division:"Open", goalType:"Race", raceDate:"" }));
   const [base,setBase]=React.useState(load("hyrox.base",{ run5k:"25:00", ski1k:"4:30", row1k:"4:00", sledPush50m:"3:00", sledPull50m:"2:50", burpeeBroad80m:"6:00", farmer200m:"3:00", lunges100m:"4:30", wallballs100:22, readiness:4 }));
   const [profile,setProfile]=React.useState(load("hyrox.profile",{ experience:"beginner", goal:"balanced" }));
@@ -816,27 +675,59 @@ export default function App(){
     alert("Week 1 plan saved to cloud.");
     window.dispatchEvent(new Event("workouts:changed"));
   }
+  async function generateWeeksToCloud(nWeeks = 4, startWeek = 1) {
+    if (!supa || !user) return alert("Sign in first.");
+    if (!plan.length) return alert("No base week generated.");
+    const rows = [];
+    for (let w = 0; w < nWeeks; w++) {
+      plan.forEach((d, i) => {
+        rows.push({
+          user_id: user.id,
+          week_index: startWeek + w,
+          day_index: i,
+          session_date: null,
+          title: d.session.type,
+          blocks: d.session.blocks || [],
+          focus: d.session.focus || null,
+          phase: d.phase,
+          targets: null,
+          completed: false,
+        });
+      });
+    }
+    const { error } = await supa.from("workouts").upsert(rows, { onConflict: "user_id,week_index,day_index" });
+    if (error) return alert("Error: " + error.message);
+    alert(`${nWeeks} week(s) saved to cloud starting at week ${startWeek}.`);
+    window.dispatchEvent(new Event("workouts:changed"));
+  }
+  async function clearCloudWeek(weekIndex = 1) {
+    if (!supa || !user) return alert("Sign in first.");
+    const { error } = await supa.from("workouts").delete().eq("user_id", user.id).eq("week_index", weekIndex);
+    if (error) return alert("Error: " + error.message);
+    alert(`Week ${weekIndex} cleared.`);
+    window.dispatchEvent(new Event("workouts:changed"));
+  }
 
   const weekday=new Date().getDay(); const map=[6,0,1,2,3,4,5]; const idx=map[weekday]??0;
   const todays=plan[idx]||plan[0]||{ day:"Mon", session:{type:"Rest",blocks:["Walk 20′"]} };
-  const [readiness,setReadiness]=React.useState(3);
-  const paces=React.useMemo(()=>({ run5k:pacePerKmFrom5k(base.run5k||"25:00"), goalRun:analysis.splits.run8k/8, ski500:ergPace500From1k(base.ski1k||"4:30"), row500:ergPace500From1k(base.row1k||"4:00"), row2k500:ergPace500From1k(base.row1k||"4:00")+2 }),[base.run5k,base.ski1k,base.row1k,analysis.splits.run8k]);
-
-  // Note: 'adjusted' is computed but not rendered in this UI; keep for future tweak or remove if unused.
-  const adjusted=React.useMemo(()=>{ const s={...todays.session}; let blocks=s.blocks?[...s.blocks]:(s.notes?[s.notes]:[]); blocks=annotateBlocks(blocks,paces); const scale=(arr,mode)=>arr.map(line=>{ let out=line; if(mode==="easy"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Math.max(1,Math.round(Number(p1)*0.65))}×`).replace(/@ *[^;\n]+pace/g,"@ easy pace").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.round(Number(n)*1.3)}${String(u).toLowerCase().includes("min")?" min":"s"}`).replace(/EMOM *([0-9]+)[′']/i,(m,min)=>`EMOM ${Math.max(8,Math.round(Number(min)*0.85))}′`);} else if(mode==="hard"){ out=out.replace(/(\d+)×/g,(m,p1)=>`${Number(p1)+1}×`).replace(/@ *5k pace/g,"@ 5k pace − 5–8s/km").replace(/rest *([0-9]+) *([′'smin]+)/gi,(m,n,u)=>`rest ${Math.max(20,Math.round(Number(n)*0.85))}${String(u).toLowerCase().includes("min")?" min":"s"}`);} return out; }); if(readiness<=2){ s.type=`${s.type} (Easy)`; s.blocks=scale(blocks,"easy"); } else if(readiness>=4){ s.type=`${s.type} (Challenging)`; s.blocks=scale(blocks,"hard"); } else { s.blocks=scale(blocks,"normal"); } return s; },[todays,readiness,paces]);
 
   return (
     <>
       <header>
         <div className="inner">
-          <div className="title"><div className="logo">🏆</div><div><div style={{fontWeight:700}}>HYROX AI Coach</div><div className="muted" style={{fontSize:12}}>v1.3 • Profile • Week plan to cloud • Check off</div></div></div>
+          <div className="title">
+            <div className="logo">🏆</div>
+            <div>
+              <div style={{fontWeight:700}}>HYROX AI Coach</div>
+              <div className="muted" style={{fontSize:12}}>v1.4 • Baseline → Plan • Train Today • Cloud week(s)</div>
+            </div>
+          </div>
         </div>
       </header>
 
       <main className="wrap">
         <h1>Dashboard</h1>
         <AuthBar/>
-        <ShareAdminCard user={user} />
 
         <Card title="Athlete">
           <div className="row">
@@ -849,7 +740,27 @@ export default function App(){
 
         <ProfileCard user={user} profile={profile} setProfile={setProfile} />
 
-        <Card title="Baseline (quick)" right={<div className="row"><button className="btn" onClick={generateWeek1ToCloud}>Generate Week 1 plan → Cloud</button></div>}>
+        <Card
+          title="Baseline (quick)"
+          right={
+            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+              <button className="btn" onClick={generateWeek1ToCloud}>Save Week 1 → Cloud</button>
+              <button className="btn" onClick={()=>generateWeeksToCloud(4, 1)}>Save 4 Weeks → Cloud</button>
+              <button className="btn" onClick={()=>{
+                const flat = (plan || []).map(d => ({
+                  day: d.day,
+                  title: d.session?.type || "",
+                  blocks: Array.isArray(d.session?.blocks) ? d.session.blocks.join(" | ") : "",
+                  focus: d.session?.focus || "",
+                  phase: d.phase || ""
+                }));
+                if (flat.length === 0) return alert("No plan to export.");
+                downloadCSV("hyrox-plan-week.csv", flat);
+              }}>Export Week (CSV)</button>
+              <button onClick={()=>clearCloudWeek(1)}>Clear Week 1</button>
+            </div>
+          }
+        >
           <div className="row" style={{flexWrap:"wrap"}}>
             {[
               ["run5k","5k run (mm:ss)"],["ski1k","SkiErg 1k"],["row1k","Row 1k"],
@@ -859,7 +770,10 @@ export default function App(){
               <input key={k} placeholder={label} value={base[k]} onChange={e=>setBase({...base,[k]:e.target.value})}/>
             ))}
             <input type="number" placeholder="Wall-balls rate (reps/min)" value={base.wallballs100} onChange={e=>setBase({...base,wallballs100:Number(e.target.value)})}/>
-            <div className="row" style={{alignItems:"center"}}><span className="muted">Readiness</span><input type="range" min={1} max={5} value={base.readiness} onChange={e=>setBase({...base, readiness:Number(e.target.value)})}/></div>
+            <div className="row" style={{alignItems:"center"}}>
+              <span className="muted">Readiness</span>
+              <input type="range" min={1} max={5} value={base.readiness} onChange={e=>setBase({...base, readiness:Number(e.target.value)})}/>
+            </div>
           </div>
         </Card>
 
@@ -883,81 +797,12 @@ export default function App(){
 
         <TrainTodayCard user={user} />
         <ThisWeek user={user} />
+        <HistoryPage user={user} />
 
-        <Card title="Pro Features"><div className="muted">Coming soon: Race Sim+, export, multi-athlete with Stripe Checkout.</div></Card>
+        <Card title="Pro Features">
+          <div className="muted">Coming soon: Race Sim+, export to PDF, multi-athlete.</div>
+        </Card>
       </main>
     </>
   );
-}
-function downloadCSV(filename, rows) {
-  const headers = Object.keys(rows[0] || {day:"", title:"", blocks:"", focus:"", phase:""});
-  const csv = [
-    headers.join(","),
-    ...rows.map(r => headers.map(h => {
-      const v = r[h];
-      const s = typeof v === "string" ? v : Array.isArray(v) ? v.join(" | ") : (v ?? "");
-      // escape CSV
-      const needsQuote = /[",\n]/.test(s);
-      return needsQuote ? `"${s.replace(/"/g,'""')}"` : s;
-    }).join(","))
-  ].join("\n");
-  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url; a.download = filename; a.click();
-  URL.revokeObjectURL(url);
-}
-async function generateWeeksToCloud(nWeeks = 4, startWeek = 1) {
-  if (!supa || !user) return alert("Sign in first.");
-  if (!plan.length) return alert("No base week generated.");
-
-  const rows = [];
-  for (let w = 0; w < nWeeks; w++) {
-    // naive periodization: repeat the base week; you can vary later
-    plan.forEach((d, i) => {
-      rows.push({
-        user_id: user.id,
-        week_index: startWeek + w,
-        day_index: i,
-        session_date: null,
-        title: d.session.type,
-        blocks: d.session.blocks || [],
-        focus: d.session.focus || null,
-        phase: d.phase,
-        targets: null,
-        completed: false,
-      });
-    });
-  }
-
-  const { error } = await supa.from("workouts").upsert(rows, { onConflict: "user_id,week_index,day_index" });
-  if (error) return alert("Error: " + error.message);
-  alert(`${nWeeks} week(s) saved to cloud starting at week ${startWeek}.`);
-  window.dispatchEvent(new Event("workouts:changed"));
-}
-async function clearCloudWeek(weekIndex = 1) {
-  if (!supa || !user) return alert("Sign in first.");
-  const { error } = await supa.from("workouts").delete().eq("user_id", user.id).eq("week_index", weekIndex);
-  if (error) return alert("Error: " + error.message);
-  alert(`Week ${weekIndex} cleared.`);
-  window.dispatchEvent(new Event("workouts:changed"));
-}
-right={
-  <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-    <button className="btn" onClick={generateWeek1ToCloud}>Save Week 1 → Cloud</button>
-    <button className="btn" onClick={()=>generateWeeksToCloud(4, 1)}>Save 4 Weeks → Cloud</button>
-    <button className="btn" onClick={()=>{
-      // create a flat export from current `plan`
-      const flat = (plan || []).map(d => ({
-        day: d.day,
-        title: d.session?.type || "",
-        blocks: Array.isArray(d.session?.blocks) ? d.session.blocks.join(" | ") : "",
-        focus: d.session?.focus || "",
-        phase: d.phase || ""
-      }));
-      if (flat.length === 0) return alert("No plan to export.");
-      downloadCSV("hyrox-plan-week.csv", flat);
-    }}>Export Week (CSV)</button>
-    <button onClick={()=>clearCloudWeek(1)}>Clear Week 1</button>
-  </div>
 }
