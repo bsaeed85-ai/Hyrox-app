@@ -692,6 +692,16 @@ export default function App(){
   React.useEffect(()=>save("hyrox.base",base),[base]);
   React.useEffect(()=>save("hyrox.profile",profile),[profile]);
 
+  export default function App(){
+  // Public page route
+  if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
+    return <SharePage />;
+  }
+
+  // --- NEW: tabs ---
+  const [tab, setTab] = React.useState("dashboard");
+
+
   const analysis=React.useMemo(()=>estimateRaceFromBaseline(base),[base]);
   const plan=React.useMemo(()=>makeWeekPlan({ goalType:athlete.goalType, raceDate:athlete.raceDate, ...base }, analysis),[athlete,base,analysis]);
 
