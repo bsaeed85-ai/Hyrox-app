@@ -1,6 +1,40 @@
 import React from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
+/* ---------- tiny UI kit (toasts, tabs, buttons) ---------- */
+function Toast({ msg }) {
+  if (!msg) return null;
+  return (
+    <div style={{
+      position:"fixed", bottom:16, right:16,
+      background:"#0ea5e9", color:"#fff",
+      padding:"10px 12px", borderRadius:10,
+      boxShadow:"0 6px 18px rgba(2,132,199,.35)", fontSize:14, zIndex:50
+    }}>{msg}</div>
+  );
+}
+function Tabs({ value, onChange, items }) {
+  return (
+    <div style={{display:"flex", gap:8, borderBottom:"1px solid #1f2937", margin:"8px 0 16px"}}>
+      {items.map((it)=>(
+        <button key={it.value}
+          onClick={()=>onChange(it.value)}
+          style={{
+            padding:"8px 12px", borderRadius:"10px 10px 0 0",
+            background: value===it.value ? "#0b1220" : "transparent",
+            border: "1px solid #1f2937",
+            borderBottom: value===it.value ? "1px solid transparent" : "1px solid #1f2937",
+            marginBottom: -1, color:"#e5e7eb"
+          }}>
+          {it.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+const Btn = (props)=>(
+  <button {...props} className={`btn ${props.className||""}`} />
+);
 
 
 /* ---------- Supabase (global client) ---------- */
