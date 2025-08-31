@@ -762,6 +762,15 @@ export default function App(){
       <header>
         <div className="inner">
           <div className="title">
+            <Tabs
+  value={tab}
+  onChange={setTab}
+  items={[
+    { value:"dashboard", label:"Dashboard" },
+    { value:"history", label:"History" },
+  ]}
+/>
+
             <div className="logo">🏆</div>
             <div>
               <div style={{fontWeight:700}}>HYROX AI Coach</div>
