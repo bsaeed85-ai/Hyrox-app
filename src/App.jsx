@@ -1,6 +1,7 @@
 import React from "react";
 import { createClient } from "@supabase/supabase-js";
 import "./styles.css";
+
 /* ---------- tiny UI kit (toasts, tabs, buttons) ---------- */
 function Toast({ msg }) {
   if (!msg) return null;
@@ -32,10 +33,7 @@ function Tabs({ value, onChange, items }) {
     </div>
   );
 }
-const Btn = (props)=>(
-  <button {...props} className={`btn ${props.className||""}`} />
-);
-
+const Btn = (props)=> <button {...props} className={`btn ${props.className||""}`} />;
 
 /* ---------- Supabase (global client) ---------- */
 const supa = (() => {
@@ -385,7 +383,12 @@ function ThisWeek({ user }) {
   return (
     <Card title="This Week (cloud)" right={<button onClick={fetchWeek} disabled={loading}>{loading?"Refreshing…":"Refresh"}</button>}>
       {err && <div className="muted" style={{ color: "#fca5a5" }}>Error: {err}</div>}
-      {!loading && (!groups || groups.length === 0) ? <div className="muted">No workouts saved to cloud yet.</div> : null}
+      {!loading && (!groups || groups.length === 0) ? (
+        <div className="muted">
+          No workouts in the cloud yet. Click <b>“Save Week 1 → Cloud”</b> above,
+          then come back and hit <b>Refresh</b>.
+        </div>
+      ) : null}
       <div className="grid" style={{ display:"grid", gridTemplateColumns:"1fr", gap:10 }}>
         {groups.map((grp)=>{
           const dayName = days[grp.day_index] ?? `Day ${grp.day_index}`;
@@ -520,7 +523,9 @@ function TrainTodayCard({ user }) {
     }
   }
 
-  function blocksTextarea(value) { setBlocks(String(value).split("\n").map((s)=>s.trim()).filter(Boolean)); }
+  function blocksTextarea(value) {
+    setBlocks(String(value).split("\n").map((s)=>s.trim()).filter(Boolean));
+  }
 
   async function save() {
     setMsg("");
@@ -534,8 +539,12 @@ function TrainTodayCard({ user }) {
       notes: notes || null,
     };
     let res;
-    if (sessionId) res = await supaLocal.from("sessions").update(payload).eq("id", sessionId).select().single();
-    else { res = await supaLocal.from("sessions").insert(payload).select().single(); if (!res.error) setSessionId(res.data.id); }
+    if (sessionId) {
+      res = await supaLocal.from("sessions").update(payload).eq("id", sessionId).select().single();
+    } else {
+      res = await supaLocal.from("sessions").insert(payload).select().single();
+      if (!res.error) setSessionId(res.data.id);
+    }
     if (res.error) { setMsg(res.error.message); return; }
     setMsg("Saved.");
   }
@@ -581,13 +590,14 @@ function TrainTodayCard({ user }) {
               <button className="px-3 py-1.5 rounded-lg bg-slate-700 hover:bg-slate-600" onClick={tryImportFromWorkouts}>Try import from cloud plan</button>
             </div>
           </div>
+          <Toast msg={msg} />
         </>
       )}
     </section>
   );
 }
 
-/* ---------- History (optional section) ---------- */
+/* ---------- History (not routed tab) ---------- */
 function groupByWeek(rows) {
   const by = {};
   for (const r of rows) {
@@ -683,7 +693,7 @@ function HistoryPage({ user }) {
   );
 }
 
-/* ---------- Main App ---------- */
+/* ---------- Main App (tabs: Dashboard / History) ---------- */
 export default function App(){
   const [athlete,setAthlete]=React.useState(load("hyrox.athlete",{ name:"", division:"Open", goalType:"Race", raceDate:"" }));
   const [base,setBase]=React.useState(load("hyrox.base",{ run5k:"25:00", ski1k:"4:30", row1k:"4:00", sledPush50m:"3:00", sledPull50m:"2:50", burpeeBroad80m:"6:00", farmer200m:"3:00", lunges100m:"4:30", wallballs100:22, readiness:4 }));
@@ -692,15 +702,16 @@ export default function App(){
   React.useEffect(()=>save("hyrox.base",base),[base]);
   React.useEffect(()=>save("hyrox.profile",profile),[profile]);
 
-  export default function App(){
-  // Public page route
-  if (typeof window !== "undefined" && window.location.pathname.startsWith("/share/")) {
-    return <SharePage />;
-  }
-
-  // --- NEW: tabs ---
   const [tab, setTab] = React.useState("dashboard");
-
+  React.useEffect(()=>{
+    const onKey = (e)=>{
+      if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "TEXTAREA")) return;
+      if (e.key.toLowerCase() === "h") setTab("history");
+      if (e.key.toLowerCase() === "d") setTab("dashboard");
+    };
+    window.addEventListener("keydown", onKey);
+    return ()=>window.removeEventListener("keydown", onKey);
+  },[]);
 
   const analysis=React.useMemo(()=>estimateRaceFromBaseline(base),[base]);
   const plan=React.useMemo(()=>makeWeekPlan({ goalType:athlete.goalType, raceDate:athlete.raceDate, ...base }, analysis),[athlete,base,analysis]);
@@ -754,109 +765,114 @@ export default function App(){
     window.dispatchEvent(new Event("workouts:changed"));
   }
 
-  const weekday=new Date().getDay(); const map=[6,0,1,2,3,4,5]; const idx=map[weekday]??0;
-  const todays=plan[idx]||plan[0]||{ day:"Mon", session:{type:"Rest",blocks:["Walk 20′"]} };
-
   return (
     <>
       <header>
         <div className="inner">
           <div className="title">
-            <Tabs
-  value={tab}
-  onChange={setTab}
-  items={[
-    { value:"dashboard", label:"Dashboard" },
-    { value:"history", label:"History" },
-  ]}
-/>
-
             <div className="logo">🏆</div>
             <div>
               <div style={{fontWeight:700}}>HYROX AI Coach</div>
               <div className="muted" style={{fontSize:12}}>v1.4 • Baseline → Plan • Train Today • Cloud week(s)</div>
             </div>
           </div>
+
+          <Tabs
+            value={tab}
+            onChange={setTab}
+            items={[
+              { value:"dashboard", label:"Dashboard" },
+              { value:"history", label:"History" },
+            ]}
+          />
         </div>
       </header>
 
       <main className="wrap">
-        <h1>Dashboard</h1>
-        <AuthBar/>
+        {tab === "dashboard" ? (
+          <>
+            <h1>Dashboard</h1>
+            <AuthBar/>
 
-        <Card title="Athlete">
-          <div className="row">
-            <input placeholder="Name" value={athlete.name} onChange={e=>setAthlete({...athlete, name:e.target.value})}/>
-            <select value={athlete.division} onChange={e=>setAthlete({...athlete, division:e.target.value})}><option>Open</option><option>Pro</option><option>Doubles</option><option>Relay</option></select>
-            <select value={athlete.goalType} onChange={e=>setAthlete({...athlete, goalType:e.target.value})}><option value="Race">Race</option><option value="Health">Health</option></select>
-            <input type="date" value={athlete.raceDate} onChange={e=>setAthlete({...athlete, raceDate:e.target.value})}/>
-          </div>
-        </Card>
-
-        <ProfileCard user={user} profile={profile} setProfile={setProfile} />
-
-        <Card
-          title="Baseline (quick)"
-          right={
-            <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
-              <button className="btn" onClick={generateWeek1ToCloud}>Save Week 1 → Cloud</button>
-              <button className="btn" onClick={()=>generateWeeksToCloud(4, 1)}>Save 4 Weeks → Cloud</button>
-              <button className="btn" onClick={()=>{
-                const flat = (plan || []).map(d => ({
-                  day: d.day,
-                  title: d.session?.type || "",
-                  blocks: Array.isArray(d.session?.blocks) ? d.session.blocks.join(" | ") : "",
-                  focus: d.session?.focus || "",
-                  phase: d.phase || ""
-                }));
-                if (flat.length === 0) return alert("No plan to export.");
-                downloadCSV("hyrox-plan-week.csv", flat);
-              }}>Export Week (CSV)</button>
-              <button onClick={()=>clearCloudWeek(1)}>Clear Week 1</button>
-            </div>
-          }
-        >
-          <div className="row" style={{flexWrap:"wrap"}}>
-            {[
-              ["run5k","5k run (mm:ss)"],["ski1k","SkiErg 1k"],["row1k","Row 1k"],
-              ["sledPush50m","Sled push 50m"],["sledPull50m","Sled pull 50m"],
-              ["burpeeBroad80m","Burpee broad 80m"],["farmer200m","Farmers 200m"],["lunges100m","Lunges 100m"]
-            ].map(([k,label])=>(
-              <input key={k} placeholder={label} value={base[k]} onChange={e=>setBase({...base,[k]:e.target.value})}/>
-            ))}
-            <input type="number" placeholder="Wall-balls rate (reps/min)" value={base.wallballs100} onChange={e=>setBase({...base,wallballs100:Number(e.target.value)})}/>
-            <div className="row" style={{alignItems:"center"}}>
-              <span className="muted">Readiness</span>
-              <input type="range" min={1} max={5} value={base.readiness} onChange={e=>setBase({...base, readiness:Number(e.target.value)})}/>
-            </div>
-          </div>
-        </Card>
-
-        <GuidedBaseline base={base} setBase={setBase} />
-
-        <Card title="Race Twin (prediction)">
-          <div className="row" style={{gap:16,flexWrap:"wrap"}}>
-            <div className="pill">Predicted: <b>{secondsToMMSS(analysis.total)}</b></div>
-            <div className="muted">Limiters: {analysis.sortedLimiters.slice(0,4).map(x=>x.station).join(", ")}</div>
-          </div>
-          <hr/>
-          <div className="grid grid-3">
-            {Object.entries(analysis.splits).map(([k,v])=>(
-              <div key={k} className="card" style={{padding:12}}>
-                <div className="muted" style={{fontSize:12}}>{k}</div>
-                <div style={{fontWeight:600}}>{secondsToMMSS(v)}</div>
+            <Card title="Athlete">
+              <div className="row">
+                <input placeholder="Name" value={athlete.name} onChange={e=>setAthlete({...athlete, name:e.target.value})}/>
+                <select value={athlete.division} onChange={e=>setAthlete({...athlete, division:e.target.value})}><option>Open</option><option>Pro</option><option>Doubles</option><option>Relay</option></select>
+                <select value={athlete.goalType} onChange={e=>setAthlete({...athlete, goalType:e.target.value})}><option value="Race">Race</option><option value="Health">Health</option></select>
+                <input type="date" value={athlete.raceDate} onChange={e=>setAthlete({...athlete, raceDate:e.target.value})}/>
               </div>
-            ))}
-          </div>
-        </Card>
+            </Card>
 
-        <TrainTodayCard user={user} />
-        <ThisWeek user={user} />
-        <HistoryPage user={user} />
+            <ProfileCard user={user} profile={profile} setProfile={setProfile} />
 
-        <Card title="Pro Features">
-          <div className="muted">Coming soon: Race Sim+, export to PDF, multi-athlete.</div>
-        </Card>
+            <Card
+              title="Baseline (quick)"
+              right={
+                <div className="row" style={{ gap: 8, flexWrap: "wrap" }}>
+                  <Btn onClick={generateWeek1ToCloud}>Save Week 1 → Cloud</Btn>
+                  <Btn onClick={()=>generateWeeksToCloud(4, 1)}>Save 4 Weeks → Cloud</Btn>
+                  <Btn onClick={()=>{
+                    const flat = (plan || []).map(d => ({
+                      day: d.day,
+                      title: d.session?.type || "",
+                      blocks: Array.isArray(d.session?.blocks) ? d.session.blocks.join(" | ") : "",
+                      focus: d.session?.focus || "",
+                      phase: d.phase || ""
+                    }));
+                    if (flat.length === 0) return alert("No plan to export.");
+                    downloadCSV("hyrox-plan-week.csv", flat);
+                  }}>Export Week (CSV)</Btn>
+                  <Btn className="secondary" onClick={()=>clearCloudWeek(1)}>Clear Week 1</Btn>
+                </div>
+              }
+            >
+              <div className="row" style={{flexWrap:"wrap"}}>
+                {[
+                  ["run5k","5k run (mm:ss)"],["ski1k","SkiErg 1k"],["row1k","Row 1k"],
+                  ["sledPush50m","Sled push 50m"],["sledPull50m","Sled pull 50m"],
+                  ["burpeeBroad80m","Burpee broad 80m"],["farmer200m","Farmers 200m"],["lunges100m","Lunges 100m"]
+                ].map(([k,label])=>(
+                  <input key={k} placeholder={label} value={base[k]} onChange={e=>setBase({...base,[k]:e.target.value})}/>
+                ))}
+                <input type="number" placeholder="Wall-balls rate (reps/min)" value={base.wallballs100} onChange={e=>setBase({...base,wallballs100:Number(e.target.value)})}/>
+                <div className="row" style={{alignItems:"center"}}>
+                  <span className="muted">Readiness</span>
+                  <input type="range" min={1} max={5} value={base.readiness} onChange={e=>setBase({...base, readiness:Number(e.target.value)})}/>
+                </div>
+              </div>
+            </Card>
+
+            <GuidedBaseline base={base} setBase={setBase} />
+
+            <Card title="Race Twin (prediction)">
+              <div className="row" style={{gap:16,flexWrap:"wrap"}}>
+                <div className="pill">Predicted: <b>{secondsToMMSS(analysis.total)}</b></div>
+                <div className="muted">Limiters: {analysis.sortedLimiters.slice(0,4).map(x=>x.station).join(", ")}</div>
+              </div>
+              <hr/>
+              <div className="grid grid-3">
+                {Object.entries(analysis.splits).map(([k,v])=>(
+                  <div key={k} className="card" style={{padding:12}}>
+                    <div className="muted" style={{fontSize:12}}>{k}</div>
+                    <div style={{fontWeight:600}}>{secondsToMMSS(v)}</div>
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            <TrainTodayCard user={user} />
+            <ThisWeek user={user} />
+
+            <Card title="Pro Features">
+              <div className="muted">Coming soon: Race Sim+, export to PDF, multi-athlete.</div>
+            </Card>
+          </>
+        ) : (
+          <>
+            <h1>History</h1>
+            <HistoryPage user={user} />
+          </>
+        )}
       </main>
     </>
   );
